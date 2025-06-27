@@ -3,12 +3,14 @@
 module Kdeploy
   class Task
     attr_reader :name, :hosts, :commands, :options
+    attr_accessor :global_variables
 
     def initialize(name, hosts = [], options = {})
       @name = name
       @hosts = Array(hosts)
       @commands = []
       @options = default_options.merge(options)
+      @global_variables = {}
     end
 
     # Add command to task
@@ -16,7 +18,9 @@ module Kdeploy
     # @param command [String] Command to execute
     # @param options [Hash] Command options
     def add_command(name, command, options = {})
-      @commands << Command.new(name, command, options)
+      # Include global variables in command options
+      command_options = options.merge(global_variables: @global_variables)
+      @commands << Command.new(name, command, command_options)
     end
 
     # Add host to task

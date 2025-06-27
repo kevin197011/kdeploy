@@ -176,8 +176,8 @@ module Kdeploy
       # Add mkdir command first
       run("mkdir -p #{File.dirname(remote_path)}", name: 'create directory')
 
-      # Add upload command
-      upload_command = UploadCommand.new(local_path, remote_path)
+      # Add upload command with global variables
+      upload_command = UploadCommand.new(local_path, remote_path, @pipeline.variables)
       upload_command.instance_variable_set(:@name, command_name)
       @current_task.commands << upload_command
     end
@@ -192,8 +192,8 @@ module Kdeploy
 
       command_name = name || "upload_template #{template_name}"
 
-      # Add template upload command
-      template_command = TemplateUploadCommand.new(template_name, remote_path, variables, template_manager)
+      # Add template upload command with global variables
+      template_command = TemplateUploadCommand.new(template_name, remote_path, variables, template_manager, @pipeline.variables)
       template_command.instance_variable_set(:@name, command_name)
       @current_task.commands << template_command
     end
@@ -228,8 +228,8 @@ module Kdeploy
 
       command_name = name || "download #{File.basename(remote_path)}"
 
-      # Add download command
-      download_command = DownloadCommand.new(remote_path, local_path)
+      # Add download command with global variables
+      download_command = DownloadCommand.new(remote_path, local_path, @pipeline.variables)
       download_command.instance_variable_set(:@name, command_name)
       @current_task.commands << download_command
     end
@@ -428,18 +428,33 @@ module Kdeploy
 
   # Special command class for file uploads
   class UploadCommand < Command
-    def initialize(local_path, remote_path)
+    def initialize(local_path, remote_path, global_variables = {})
       @local_path = local_path
       @remote_path = remote_path
+      @global_variables = global_variables
       super('upload', "upload #{local_path} #{remote_path}")
     end
 
     def execute(host, connection)
       start_time = Time.now
 
-      KdeployLogger.info("Uploading '#{@local_path}' to #{host}:#{@remote_path}")
+      # Process remote path template variables
+      processed_remote_path = @remote_path.dup
+      # Merge global variables with host variables
+      all_variables = @global_variables.merge(host.vars).merge(
+        hostname: host.hostname,
+        user: host.user,
+        port: host.port
+      )
 
-      success = connection.upload(@local_path, @remote_path)
+      all_variables.each do |key, value|
+        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
+        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
+      end
+
+      KdeployLogger.info("Uploading '#{@local_path}' to #{host}:#{processed_remote_path}")
+
+      success = connection.upload(@local_path, processed_remote_path)
 
       duration = Time.now - start_time
       @result = {
@@ -459,21 +474,36 @@ module Kdeploy
 
   # Special command class for file downloads
   class DownloadCommand < Command
-    def initialize(remote_path, local_path)
+    def initialize(remote_path, local_path, global_variables = {})
       @remote_path = remote_path
       @local_path = local_path
+      @global_variables = global_variables
       super('download', "download #{remote_path} #{local_path}")
     end
 
     def execute(host, connection)
       start_time = Time.now
 
+      # Process remote path template variables
+      processed_remote_path = @remote_path.dup
+      # Merge global variables with host variables
+      all_variables = @global_variables.merge(host.vars).merge(
+        hostname: host.hostname,
+        user: host.user,
+        port: host.port
+      )
+
+      all_variables.each do |key, value|
+        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
+        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
+      end
+
       # Create unique local path for each host
       host_local_path = @local_path.sub(/(\.[^.]+)?$/) { "_#{host.hostname}#{::Regexp.last_match(1)}" }
 
-      KdeployLogger.info("Downloading '#{@remote_path}' from #{host} to #{host_local_path}")
+      KdeployLogger.info("Downloading '#{processed_remote_path}' from #{host} to #{host_local_path}")
 
-      success = connection.download(@remote_path, host_local_path)
+      success = connection.download(processed_remote_path, host_local_path)
 
       duration = Time.now - start_time
       @result = {
@@ -494,26 +524,34 @@ module Kdeploy
 
   # Special command class for template uploads
   class TemplateUploadCommand < Command
-    def initialize(template_name, remote_path, variables, template_manager)
+    def initialize(template_name, remote_path, variables, template_manager, global_variables = {})
       @template_name = template_name
       @remote_path = remote_path
       @variables = variables
       @template_manager = template_manager
+      @global_variables = global_variables
       super('upload_template', "upload_template #{template_name} #{remote_path}")
     end
 
     def execute(host, connection)
       start_time = Time.now
 
-      # Merge host variables with template variables
-      host_variables = @variables.merge(
+      # Merge variables in priority order: global < template < host < host_info
+      host_variables = @global_variables.merge(@variables).merge(
         hostname: host.hostname,
         user: host.user,
         port: host.port
       )
 
-      # Add host custom variables
+      # Add host custom variables (highest priority except for host info)
       host.vars.each { |k, v| host_variables[k] = v }
+
+      # Process remote path template variables
+      processed_remote_path = @remote_path.dup
+      host_variables.each do |key, value|
+        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
+        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
+      end
 
       # Render template
       rendered_content = @template_manager.render(@template_name, host_variables)
@@ -522,13 +560,13 @@ module Kdeploy
       temp_file = "/tmp/kdeploy_template_#{Time.now.to_i}_#{Process.pid}"
       File.write(temp_file, rendered_content)
 
-      KdeployLogger.info("Uploading rendered template '#{@template_name}' to #{host}:#{@remote_path}")
+      KdeployLogger.info("Uploading rendered template '#{@template_name}' to #{host}:#{processed_remote_path}")
 
       # Create remote directory first
-      connection.execute("mkdir -p #{File.dirname(@remote_path)}")
+      connection.execute("mkdir -p #{File.dirname(processed_remote_path)}")
 
       # Upload rendered template
-      success = connection.upload(temp_file, @remote_path)
+      success = connection.upload(temp_file, processed_remote_path)
 
       # Cleanup temporary file
       FileUtils.rm_f(temp_file)

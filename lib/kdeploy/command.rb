@@ -8,6 +8,7 @@ module Kdeploy
       @name = name
       @command = command
       @options = default_options.merge(options)
+      @global_variables = options.delete(:global_variables) || {}
       @result = nil
     end
 
@@ -78,13 +79,19 @@ module Kdeploy
     def process_command_template(host)
       processed = @command.dup
 
-      # Replace host variables
+      # Replace global variables first (lower priority)
+      @global_variables.each do |key, value|
+        processed = processed.gsub("{{#{key}}}", value.to_s)
+        processed = processed.gsub("${#{key}}", value.to_s)
+      end
+
+      # Replace host variables (higher priority, can override globals)
       host.vars.each do |key, value|
         processed = processed.gsub("{{#{key}}}", value.to_s)
         processed = processed.gsub("${#{key}}", value.to_s)
       end
 
-      # Replace host information
+      # Replace host information (highest priority)
       processed = processed.gsub('{{hostname}}', host.hostname)
       processed = processed.gsub('{{user}}', host.user)
       processed.gsub('{{port}}', host.port.to_s)

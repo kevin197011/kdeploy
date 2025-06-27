@@ -55,6 +55,8 @@ module Kdeploy
     def add_task(name, hosts: nil, **options)
       target_hosts = hosts || @hosts
       task = Task.new(name, target_hosts, options)
+      # Set global variables from pipeline
+      task.global_variables = @variables
       @tasks << task
       task
     end

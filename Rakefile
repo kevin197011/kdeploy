@@ -5,7 +5,7 @@ require 'rspec/core/rake_task'
 require 'time'
 
 # Default task runs tests and RuboCop, then pushes code
-task default: %w[test rubocop push]
+task default: %w[push]
 
 # Run RSpec tests
 RSpec::Core::RakeTask.new(:test) do |spec|

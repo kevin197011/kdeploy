@@ -51,21 +51,56 @@ $ cd myapp
 
 ### 2. 配置主机和任务
 
-编辑 `deploy.rb` 文件：
+编辑 `inventory.yml` 配置主机清单：
+
+```yaml
+# 全局变量
+vars:
+  application: myapp
+  version: 1.0.0
+  deploy_to: /opt/myapp
+  environment: production
+
+# 主机群组
+groups:
+  webservers:
+    hosts:
+      - 192.168.1.100
+      - 192.168.1.101
+    vars:
+      app_port: 3000
+
+  databases:
+    hosts:
+      - 192.168.1.102
+    vars:
+      postgres_port: 5432
+
+# 主机详细配置
+hosts:
+  192.168.1.100:
+    user: deploy
+    roles: [web, app]
+  192.168.1.101:
+    user: deploy
+    roles: [web, app]
+  192.168.1.102:
+    user: deploy
+    roles: [database]
+```
+
+编辑主部署脚本 `deploy.rb`：
 
 ```ruby
-# 设置变量
-set 'application', 'myapp'
-set 'version', '1.0.0'
-set 'deploy_to', '/opt/myapp'
+# 加载主机配置
+inventory 'inventory.yml'
 
-# 定义主机
-host '192.168.1.100', user: 'deploy', roles: [:web, :app]
-host '192.168.1.101', user: 'deploy', roles: [:db]
+# 引入模块化脚本（可选，用于复杂项目）
+include 'scripts/common_tasks.rb' if File.exist?('scripts/common_tasks.rb')
 
 # 部署任务
-task 'deploy', on: [:web, :app] do
-  run 'echo "正在部署 {{application}} v{{version}}..."'
+task 'deploy', on: :webservers do
+  run 'echo "正在部署 {{application}} v{{version}} 到 {{hostname}}..."'
 
   # 使用 heredoc 语法执行复杂部署逻辑
   run <<~DEPLOYMENT
@@ -76,24 +111,47 @@ task 'deploy', on: [:web, :app] do
     echo "Pulling latest code..."
     git pull origin main
 
+    echo "Installing dependencies..."
+    npm install --production
+
     echo "Restarting application..."
     sudo systemctl restart {{application}}
 
-    echo "✅ Deployment completed!"
+    echo "✅ Deployment completed on {{hostname}}!"
   DEPLOYMENT
 end
 
 # 数据库设置
-task 'setup_db', on: :db do
-  run 'echo "设置数据库..."'
+task 'setup_db', on: :databases do
+  run 'echo "设置数据库在 {{hostname}}..."'
   run 'sudo systemctl restart postgresql'
 end
 
 # 健康检查
-task 'health_check' do
-  run 'curl -f http://localhost:3000/health || exit 1',
+task 'health_check', on: :webservers do
+  run 'curl -f http://localhost:{{app_port}}/health || exit 1',
       name: 'health_check',
-      timeout: 30
+      timeout: 30,
+      retry_count: 3
+end
+```
+
+可选：创建模块化脚本 `scripts/common_tasks.rb`：
+
+```ruby
+# 通用任务定义
+task 'notify_start' do
+  local 'echo "🚀 开始部署 {{application}} v{{version}}"'
+end
+
+task 'notify_completion' do
+  local 'echo "🎉 部署完成！应用版本：{{version}}"'
+end
+
+task 'system_info', on: :all do
+  run 'echo "主机信息：{{hostname}} ({{user}})"'
+  run 'uptime'
+  run 'df -h | head -3'
 end
 ```
 
@@ -112,6 +170,164 @@ $ kdeploy deploy deploy.rb
 
 # 详细输出模式
 $ kdeploy deploy deploy.rb --verbose
+```
+
+## 📁 项目结构
+
+`kdeploy init` 初始化的项目结构如下：
+
+```
+myapp/
+├── deploy.rb                    # 主部署脚本
+├── inventory.yml               # 主机清单配置文件
+├── config/                     # 配置文件目录
+│   └── kdeploy.yml            # Kdeploy 全局配置
+├── scripts/                   # 🎯 可重用脚本目录
+│   ├── database_tasks.rb      # 数据库相关任务
+│   ├── web_server_config.rb   # Web服务器配置任务
+│   ├── monitoring_setup.rb    # 监控配置任务
+│   └── common_tasks.rb        # 通用任务定义
+└── templates/                 # ERB模板文件目录
+    ├── nginx.conf.erb         # Nginx配置模板
+    ├── app.service.erb        # Systemd服务模板
+    ├── deploy.sh.erb          # 部署脚本模板
+    └── backup.sh.erb          # 备份脚本模板
+```
+
+### 📜 scripts 目录详解
+
+**scripts 目录用于存放模块化的部署脚本片段**，帮助你：
+
+- ✅ **模块化管理**：将不同功能的部署逻辑分离到独立文件
+- ✅ **代码复用**：在多个部署脚本之间共享通用任务
+- ✅ **维护性强**：每个脚本文件职责单一，易于维护和调试
+- ✅ **团队协作**：不同团队成员可以负责不同的脚本模块
+
+#### 使用示例
+
+**1. 创建模块化脚本：**
+
+```ruby
+# scripts/database_tasks.rb
+task 'migrate_database', on: :databases do
+  run <<~SQL_MIGRATION
+    cd {{deploy_to}}
+    bundle exec rake db:migrate RAILS_ENV={{environment}}
+    bundle exec rake db:seed RAILS_ENV={{environment}}
+  SQL_MIGRATION
+end
+
+task 'backup_database', on: :databases do
+  run 'pg_dump {{application}}_{{environment}} > /backup/{{application}}_$(date +%Y%m%d_%H%M%S).sql'
+end
+```
+
+```ruby
+# scripts/web_server_config.rb
+task 'configure_nginx', on: :webservers do
+  upload_template 'nginx.conf', '/etc/nginx/sites-available/{{application}}'
+  run 'sudo ln -sf /etc/nginx/sites-available/{{application}} /etc/nginx/sites-enabled/'
+  run 'sudo nginx -t && sudo systemctl reload nginx'
+end
+
+task 'restart_services', on: [:web, :app] do
+  run 'sudo systemctl restart nginx'
+  run 'sudo systemctl restart {{application}}'
+end
+```
+
+```ruby
+# scripts/common_tasks.rb
+task 'health_check' do
+  run 'curl -f http://localhost:{{app_port}}/health || exit 1',
+      name: 'health_check',
+      timeout: 30,
+      retry_count: 3
+end
+
+task 'notify_deployment' do
+  local 'echo "🚀 Starting deployment of {{application}} v{{version}}"'
+
+  # 部署完成后通知
+  when ENV['SLACK_WEBHOOK'] do
+    local 'curl -X POST {{slack_webhook}} -d "{\\"text\\": \\"✅ {{application}} v{{version}} deployed successfully\\"}"'
+  end
+end
+```
+
+**2. 在主部署脚本中引用：**
+
+```ruby
+# deploy.rb - 主部署脚本
+inventory 'inventory.yml'
+
+# 引入模块化脚本
+include 'scripts/common_tasks.rb'
+include 'scripts/database_tasks.rb'
+include 'scripts/web_server_config.rb'
+
+# 按环境引入不同配置
+case ENV['ENVIRONMENT']
+when 'production'
+  include 'scripts/production_setup.rb'
+when 'staging'
+  include 'scripts/staging_setup.rb'
+end
+
+# 主部署流程
+task 'full_deploy' do
+  run 'echo "Starting full deployment for {{application}}..."'
+end
+
+# 快速部署流程（只更新代码）
+task 'quick_deploy', on: :webservers do
+  run <<~DEPLOYMENT
+    cd {{deploy_to}}
+    git pull origin {{branch}}
+    sudo systemctl restart {{application}}
+  DEPLOYMENT
+end
+```
+
+**3. 按功能拆分复杂部署：**
+
+```ruby
+# scripts/monitoring_setup.rb
+task 'setup_monitoring', on: :webservers do
+  # 安装监控agent
+  run 'curl -sSL https://agent.example.com/install.sh | bash'
+
+  # 配置监控
+  upload_template 'monitoring.conf', '/etc/monitoring/agent.conf'
+  run 'sudo systemctl enable monitoring-agent'
+  run 'sudo systemctl start monitoring-agent'
+end
+```
+
+### 🎨 templates 目录说明
+
+templates 目录存放 ERB 模板文件，用于动态生成配置文件：
+
+```erb
+<!-- templates/nginx.conf.erb -->
+# Nginx configuration for <%= application %>
+server {
+    listen <%= nginx_port || 80 %>;
+    server_name <%= hostname %>;
+    root <%= deploy_to %>/public;
+
+    location @app {
+        proxy_pass http://127.0.0.1:<%= app_port || 3000 %>;
+        proxy_set_header Host $host;
+    }
+}
+```
+
+使用模板：
+```ruby
+task 'configure_nginx' do
+  upload_template 'nginx.conf', '/etc/nginx/sites-available/{{application}}'
+end
 ```
 
 ## 📊 输出示例
@@ -498,6 +714,111 @@ unless File.exist?('.maintenance') do
   end
 end
 ```
+
+### 脚本模块化
+
+kdeploy 支持使用 `include` 功能将复杂的部署脚本拆分为多个模块，提高代码的可维护性和复用性：
+
+```ruby
+# 主部署脚本 deploy.rb
+inventory 'inventory.yml'
+
+# 引入通用任务模块
+include 'scripts/common_tasks.rb'
+
+# 按功能引入专门的模块
+include 'scripts/database_tasks.rb'
+include 'scripts/web_server_config.rb'
+include 'scripts/monitoring_setup.rb'
+
+# 按环境引入不同配置
+case ENV['ENVIRONMENT']
+when 'production'
+  include 'scripts/production_setup.rb'
+when 'staging'
+  include 'scripts/staging_setup.rb'
+when 'development'
+  include 'scripts/development_setup.rb'
+end
+
+# 主部署任务
+task 'full_deploy' do
+  run 'echo "Starting full deployment pipeline..."'
+end
+```
+
+**模块化脚本示例：**
+
+```ruby
+# scripts/database_tasks.rb
+task 'migrate_database', on: :databases do
+  run <<~MIGRATION
+    cd {{deploy_to}}
+    bundle exec rake db:migrate RAILS_ENV={{environment}}
+    bundle exec rake db:seed RAILS_ENV={{environment}}
+  MIGRATION
+end
+
+task 'backup_database', on: :databases do
+  run 'pg_dump {{application}}_{{environment}} > /backup/{{application}}_$(date +%Y%m%d_%H%M%S).sql'
+end
+
+task 'restore_database', on: :databases do
+  run 'psql {{application}}_{{environment}} < {{backup_file}}'
+end
+```
+
+```ruby
+# scripts/monitoring_setup.rb
+task 'install_monitoring', on: :all do
+  run <<~MONITORING
+    # Install monitoring agent
+    curl -sSL https://monitoring.example.com/install.sh | sudo bash
+
+    # Configure agent
+    sudo tee /etc/monitoring/config.yml << EOF
+    server: {{monitoring_server}}
+    api_key: {{monitoring_api_key}}
+    tags:
+      - environment:{{environment}}
+      - application:{{application}}
+      - hostname:{{hostname}}
+    EOF
+
+    # Start service
+    sudo systemctl enable monitoring-agent
+    sudo systemctl start monitoring-agent
+  MONITORING
+end
+```
+
+```ruby
+# scripts/production_setup.rb
+# 生产环境专用配置
+
+set 'environment', 'production'
+set 'branch', 'main'
+set 'backup_enabled', true
+
+task 'production_security_check' do
+  run 'fail2ban-client status'
+  run 'ufw status'
+  run 'sudo chkrootkit'
+end
+
+task 'performance_tuning', on: :webservers do
+  run 'echo "net.core.somaxconn = 65535" | sudo tee -a /etc/sysctl.conf'
+  run 'sudo sysctl -p'
+end
+```
+
+**最佳实践：**
+
+- 🗂️ **按功能分组**：数据库、Web服务器、监控等分别放在不同文件
+- 🌍 **按环境分离**：生产、测试、开发环境的特殊配置分开管理
+- 🔄 **通用任务复用**：将通用的健康检查、通知等任务放在 `common_tasks.rb`
+- 📝 **明确命名**：使用清晰的文件名表明脚本用途
+- 🔍 **相对路径**：使用相对于部署脚本的路径引用模块
 
 ## 命令行选项
 
