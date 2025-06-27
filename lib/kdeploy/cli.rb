@@ -5,6 +5,10 @@ require 'tty-prompt'
 
 module Kdeploy
   class CLI < Thor
+    # Fix Thor deprecation warning
+    def self.exit_on_failure?
+      true
+    end
     desc 'execute SCRIPT', 'Execute deployment script'
     option :config, aliases: '-c', desc: 'Configuration file path'
     option :inventory, aliases: '-i', desc: 'Inventory file path'
@@ -34,6 +38,16 @@ module Kdeploy
         KdeployLogger.debug("Backtrace: #{e.backtrace.join("\n")}")
         exit 1
       end
+    end
+
+    desc 'deploy SCRIPT', 'Execute deployment script (alias for execute)'
+    option :config, aliases: '-c', desc: 'Configuration file path'
+    option :inventory, aliases: '-i', desc: 'Inventory file path'
+    option :dry_run, aliases: '-d', type: :boolean, desc: 'Perform dry run without executing'
+    option :verbose, aliases: '-v', type: :boolean, desc: 'Enable verbose output'
+    option :log_file, aliases: '-l', desc: 'Log file path'
+    def deploy(script_file)
+      execute(script_file)
     end
 
     desc 'init [PROJECT_NAME]', 'Initialize new deployment project'
