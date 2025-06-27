@@ -12,8 +12,13 @@ Kdeploy 是一个轻量级的 agentless 运维部署工具，类似于 Chef、Pu
 - ⚡ **并发执行**: 支持多主机并发操作和并发控制
 - 🛠️ **批量操作**: 支持批量执行 Shell 命令
 - 🔒 **SSH 连接**: 基于 SSH 的安全连接
-- 📝 **日志记录**: 完善的日志记录和错误处理
+- 📝 **实时输出**: 命令执行结果实时显示，包含执行时间统计
 - 🎯 **角色管理**: 基于角色的主机分组管理
+- 📋 **Inventory 管理**: 支持 YAML 格式的主机清单，支持群组和变量管理
+- 🧩 **Heredoc 语法**: 支持多行 Shell 脚本的 heredoc 语法
+- 🎨 **ERB 模板**: 内置 ERB 模板引擎，支持动态配置文件生成
+- 🏷️ **变量替换**: 支持 `{{variable}}` 和 `${variable}` 模板语法
+- 🖥️ **本地命令**: 支持本地命令执行和混合部署场景
 
 ## 安装
 
@@ -49,18 +54,33 @@ $ cd myapp
 编辑 `deploy.rb` 文件：
 
 ```ruby
+# 设置变量
+set 'application', 'myapp'
+set 'version', '1.0.0'
+set 'deploy_to', '/opt/myapp'
+
 # 定义主机
 host '192.168.1.100', user: 'deploy', roles: [:web, :app]
 host '192.168.1.101', user: 'deploy', roles: [:db]
 
-# 设置变量
-set :application, 'myapp'
-set :deploy_to, '/opt/myapp'
-
 # 部署任务
 task 'deploy', on: [:web, :app] do
-  run 'echo "正在部署应用..."'
-  run 'sudo systemctl restart myapp'
+  run 'echo "正在部署 {{application}} v{{version}}..."'
+
+  # 使用 heredoc 语法执行复杂部署逻辑
+  run <<~DEPLOYMENT
+    echo "Creating deployment directory..."
+    sudo mkdir -p {{deploy_to}}
+    cd {{deploy_to}}
+
+    echo "Pulling latest code..."
+    git pull origin main
+
+    echo "Restarting application..."
+    sudo systemctl restart {{application}}
+
+    echo "✅ Deployment completed!"
+  DEPLOYMENT
 end
 
 # 数据库设置
@@ -84,13 +104,92 @@ end
 $ kdeploy validate deploy.rb
 
 # 执行干运行
-$ kdeploy run deploy.rb --dry-run
+$ kdeploy deploy deploy.rb --dry-run
 
-# 执行部署
-$ kdeploy run deploy.rb
+# 执行部署（两种方式等价）
+$ kdeploy execute deploy.rb
+$ kdeploy deploy deploy.rb
+
+# 详细输出模式
+$ kdeploy deploy deploy.rb --verbose
+```
+
+## 📊 输出示例
+
+Kdeploy 提供丰富的实时输出信息，包括执行状态、耗时统计和命令结果：
+
+```bash
+$ kdeploy deploy deploy.rb
+
+🚀 Starting deployment...
+[2025-06-28 03:26:43] INFO: Starting deployment: default
+[2025-06-28 03:26:43] INFO: 🚀 Executing local command 'local: echo'
+[2025-06-28 03:26:43] INFO: ✅ Local command 'local: echo' completed in 0.01s
+[2025-06-28 03:26:43] INFO: 📤 Output:
+[2025-06-28 03:26:43] INFO:    🚀 Starting deployment of myapp v1.0.0
+[2025-06-28 03:26:43] INFO: 🚀 Executing 'deploy' on deploy@192.168.1.100:22
+[2025-06-28 03:26:43] INFO: ✅ Command 'deploy' completed on deploy@192.168.1.100:22 in 1.25s
+[2025-06-28 03:26:43] INFO: 📤 Output:
+[2025-06-28 03:26:43] INFO:    正在部署 myapp v1.0.0...
+[2025-06-28 03:26:43] INFO:    Creating deployment directory...
+[2025-06-28 03:26:43] INFO:    Pulling latest code...
+[2025-06-28 03:26:43] INFO:    Restarting application...
+[2025-06-28 03:26:43] INFO:    ✅ Deployment completed!
 ```
 
 ## DSL 语法参考
+
+### 变量定义和使用
+
+```ruby
+# 全局变量定义
+set 'application', 'myapp'
+set 'version', '1.0.0'
+set 'environment', 'production'
+
+# 在命令中使用变量（支持两种语法）
+run 'echo "Deploying {{application}} v{{version}}"'
+run 'echo "Environment: ${environment}"'
+
+# 在 heredoc 中使用变量
+run <<~SCRIPT
+  echo "=== {{application}} Deployment ==="
+  echo "Version: {{version}}"
+  echo "Environment: {{environment}}"
+  echo "Hostname: {{hostname}}"  # 自动变量
+SCRIPT
+```
+
+### 本地命令执行
+
+```ruby
+# 本地单行命令
+local 'echo "Starting deployment process..."'
+local 'uptime'
+local 'df -h | head -5'
+
+# 本地多行命令（heredoc）
+local <<~PREPARATION
+  echo "=== Pre-deployment Checks ==="
+  echo "Current user: $(whoami)"
+  echo "Current date: $(date)"
+  echo "System uptime:"
+  uptime
+  echo "Available disk space:"
+  df -h | head -5
+  echo "=== Preparation completed ==="
+PREPARATION
+
+# 混合本地和远程命令
+local 'echo "Starting deployment from local machine..."'
+
+task 'deploy', on: :webservers do
+  run 'echo "Deploying on remote server {{hostname}}..."'
+  run 'sudo systemctl restart myapp'
+end
+
+local 'echo "🎉 Deployment process completed!"'
+```
 
 ### 主机定义
 
@@ -267,6 +366,10 @@ run 'curl -f http://localhost/health',
 # 角色限制
 run 'sudo systemctl restart nginx', only: :web
 run 'echo "非数据库服务器"', except: :db
+
+# 变量替换
+run 'echo "Deploying to {{hostname}} as {{user}}"'
+run 'cd {{deploy_to}} && git pull origin {{branch}}'
 ```
 
 ### 文件操作
@@ -277,6 +380,9 @@ upload 'local/file.txt', '/remote/path/file.txt'
 
 # 下载文件
 download '/remote/log/app.log', 'local/logs/'
+
+# 上传模板文件
+upload_template 'nginx.conf', '/etc/nginx/sites-available/{{application}}'
 ```
 
 ### ERB 模板支持
@@ -376,13 +482,9 @@ sudo systemctl restart <%= application %>
 echo "Deployment completed!"
 ```
 
-### 变量和条件
+### 条件执行
 
 ```ruby
-# 设置变量
-set :env, 'production'
-set :deploy_to, '/opt/myapp'
-
 # 条件执行
 when ENV['RAILS_ENV'] == 'production' do
   task 'deploy_production' do
@@ -390,29 +492,31 @@ when ENV['RAILS_ENV'] == 'production' do
   end
 end
 
-# 使用变量
-task 'deploy' do
-  run "cd #{deploy_to} && git pull"
+unless File.exist?('.maintenance') do
+  task 'normal_deploy' do
+    run 'echo "Normal deployment"'
+  end
 end
 ```
 
 ## 命令行选项
 
 ```bash
-# 基本用法
+# 基本用法（两种方式等价）
 kdeploy execute script.rb
+kdeploy deploy script.rb
 
 # 指定配置文件和inventory文件
-kdeploy execute script.rb -c config/kdeploy.yml -i inventory.yml
+kdeploy deploy script.rb -c config/kdeploy.yml -i inventory.yml
 
 # 详细输出
-kdeploy execute script.rb --verbose
+kdeploy deploy script.rb --verbose
 
 # 干运行
-kdeploy execute script.rb --dry-run
+kdeploy deploy script.rb --dry-run
 
 # 日志文件
-kdeploy execute script.rb --log-file deployment.log
+kdeploy deploy script.rb --log-file deployment.log
 
 # 验证脚本（支持inventory）
 kdeploy validate script.rb -i inventory.yml
@@ -425,6 +529,10 @@ kdeploy version
 
 # 初始化新项目（自动创建inventory.yml）
 kdeploy init myproject
+
+# 查看帮助
+kdeploy help
+kdeploy help deploy
 ```
 
 ## 配置文件
@@ -499,33 +607,112 @@ task 'critical_task', fail_fast: true do
 end
 ```
 
-### 脚本包含
+### 混合部署模式
 
 ```ruby
-# 包含其他脚本
-include 'scripts/database.rb'
-include 'scripts/webserver.rb'
+# 混合本地和远程操作
+local 'echo "🚀 Starting deployment from $(hostname)"'
+
+# 准备阶段（本地）
+local <<~PREPARATION
+  echo "=== Pre-deployment Checks ==="
+  git status
+  npm test
+  echo "✅ All checks passed"
+PREPARATION
+
+# 部署阶段（远程）
+task 'deploy', on: :production do
+  run 'echo "Deploying to {{hostname}}..."'
+
+  run <<~DEPLOYMENT
+    cd {{deploy_to}}
+    git pull origin {{branch}}
+    npm install --production
+    sudo systemctl restart {{application}}
+  DEPLOYMENT
+end
+
+# 完成阶段（本地）
+local 'echo "🎉 Deployment completed successfully!"'
 ```
 
-## 开发
+## 示例项目
 
-克隆项目后，运行 `bin/setup` 安装依赖。然后运行 `rake spec` 执行测试。
+### 典型的Rails应用部署
 
-要在本地安装这个 gem，运行 `bundle exec rake install`。要发布新版本，更新 `version.rb` 中的版本号，然后运行 `bundle exec rake release`，这将创建一个 git 标签，推送提交和创建的标签，并将 `.gem` 文件推送到 [rubygems.org](https://rubygems.org)。
+```ruby
+# deploy.rb
+set 'application', 'myapp'
+set 'repo_url', 'git@github.com:mycompany/myapp.git'
+set 'branch', 'main'
+set 'deploy_to', '/var/www/myapp'
+
+inventory 'production_inventory.yml'
+
+# 本地准备
+local 'echo "🚀 Starting Rails deployment..."'
+local 'git status'
+
+# 部署任务
+task 'deploy', on: :webservers do
+  run <<~DEPLOY
+    echo "Deploying Rails app to {{hostname}}..."
+
+    # Backup current release
+    if [ -d "{{deploy_to}}/current" ]; then
+      sudo mv {{deploy_to}}/current {{deploy_to}}/backup_$(date +%s)
+    fi
+
+    # Clone or update
+    sudo mkdir -p {{deploy_to}}
+    cd {{deploy_to}}
+
+    if [ -d ".git" ]; then
+      git fetch origin
+      git reset --hard origin/{{branch}}
+    else
+      git clone {{repo_url}} .
+      git checkout {{branch}}
+    fi
+
+    # Bundle and assets
+    bundle install --deployment --without development test
+    RAILS_ENV=production bundle exec rake assets:precompile
+
+    # Database migration
+    RAILS_ENV=production bundle exec rake db:migrate
+
+    # Restart services
+    sudo systemctl restart {{application}}
+    sudo systemctl restart nginx
+
+    echo "✅ Deployment to {{hostname}} completed!"
+  DEPLOY
+end
+
+# 健康检查
+task 'health_check', on: :webservers do
+  run 'curl -f http://localhost/health', timeout: 30
+end
+
+local 'echo "🎉 Rails deployment completed!"'
+```
+
+## 最佳实践
+
+1. **使用 Inventory 文件**：管理复杂的主机配置
+2. **变量化配置**：使用变量避免硬编码
+3. **分阶段部署**：先准备、再部署、后验证
+4. **错误处理**：适当使用 `ignore_errors` 和 `fail_fast`
+5. **日志记录**：使用详细输出模式进行调试
+6. **模板化配置**：使用 ERB 模板生成动态配置
+7. **混合操作**：结合本地和远程命令优化部署流程
 
 ## 贡献
 
-欢迎提交 Bug 报告和拉取请求到 https://github.com/kdeploy/kdeploy。
+欢迎提交 Issue 和 Pull Request！
 
 ## 许可证
 
-该 gem 在 [MIT License](https://opensource.org/licenses/MIT) 下提供开源许可。
-
-## 示例
-
-查看 `examples/` 目录获取更多使用示例：
-
-- `examples/basic_deployment.rb` - 基本部署示例
-- `examples/rails_deployment.rb` - Rails 应用部署
-- `examples/multi_environment.rb` - 多环境部署
-- `examples/database_migration.rb` - 数据库迁移
+MIT License
