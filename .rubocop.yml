@@ -1,0 +1,99 @@
+# require:
+#   - rubocop-rspec
+
+AllCops:
+  TargetRubyVersion: 3.0
+  NewCops: enable
+  Exclude:
+    - 'vendor/**/*'
+    - 'tmp/**/*'
+    - 'bin/**/*'
+  SuggestExtensions: false
+
+# Style
+Style/Documentation:
+  Enabled: false
+
+Style/FrozenStringLiteralComment:
+  Enabled: true
+
+Style/StringLiterals:
+  EnforcedStyle: single_quotes
+
+Style/StringLiteralsInInterpolation:
+  EnforcedStyle: single_quotes
+
+# Layout
+Layout/LineLength:
+  Max: 150
+  AllowedPatterns: ['\A#']
+
+Layout/MultilineMethodCallIndentation:
+  EnforcedStyle: indented
+
+# Metrics
+Metrics/ClassLength:
+  Max: 400
+  Exclude:
+    - 'lib/kdeploy/cli.rb' # CLI class is naturally large
+
+Metrics/MethodLength:
+  Max: 40
+  Exclude:
+    - 'spec/**/*'
+    - 'lib/kdeploy/cli.rb' # CLI methods can be longer
+
+Metrics/BlockLength:
+  Exclude:
+    - 'spec/**/*'
+    - '*.gemspec'
+
+Metrics/AbcSize:
+  Max: 35
+  Exclude:
+    - 'lib/kdeploy/inventory.rb' # Inventory parsing is complex
+
+Metrics/CyclomaticComplexity:
+  Max: 15
+  Exclude:
+    - 'lib/kdeploy/inventory.rb' # Inventory parsing is complex
+
+Metrics/PerceivedComplexity:
+  Max: 15
+  Exclude:
+    - 'lib/kdeploy/inventory.rb' # Inventory parsing is complex
+
+Metrics/ParameterLists:
+  Max: 8 # Some methods need more parameters
+
+# Naming
+Naming/PredicatePrefix:
+  ForbiddenPrefixes:
+    - 'is_'
+
+Naming/PredicateMethod:
+  Exclude:
+    - 'spec/**/*' # Mock methods don't need to follow naming conventions
+
+# Lint
+Lint/DuplicateBranch:
+  Exclude:
+    - 'lib/kdeploy/logger.rb' # Logger level mapping has duplicate branches
+
+Lint/UnusedMethodArgument:
+  Exclude:
+    - 'spec/**/*' # Mock methods may have unused arguments
+
+Lint/UselessAssignment:
+  Exclude:
+    - 'lib/kdeploy/ssh_connection.rb' # Some assignments are for clarity
+
+# RSpec (disabled - requires rubocop-rspec gem)
+# RSpec/ExampleLength:
+#   Max: 10
+#
+# RSpec/MultipleExpectations:
+#   Max: 5
+#
+# RSpec/NestedGroups:
+#   Max: 4
