@@ -536,6 +536,18 @@ module Kdeploy
     def execute(host, connection)
       start_time = Time.now
 
+      host_variables = build_host_variables(host)
+      processed_remote_path = process_remote_path_variables(host_variables)
+      success = perform_template_upload(host, connection, host_variables, processed_remote_path)
+
+      record_execution_result(start_time, success, host)
+    rescue StandardError => e
+      handle_upload_error(e, start_time, host)
+    end
+
+    private
+
+    def build_host_variables(host)
       # Merge variables in priority order: global < template < host < host_info
       host_variables = @global_variables.merge(@variables).merge(
         hostname: host.hostname,
@@ -545,32 +557,47 @@ module Kdeploy
 
       # Add host custom variables (highest priority except for host info)
       host.vars.each { |k, v| host_variables[k] = v }
+      host_variables
+    end
 
-      # Process remote path template variables
+    def process_remote_path_variables(host_variables)
       processed_remote_path = @remote_path.dup
       host_variables.each do |key, value|
         processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
         processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
       end
+      processed_remote_path
+    end
 
-      # Render template
+    def perform_template_upload(host, connection, host_variables, processed_remote_path)
       rendered_content = @template_manager.render(@template_name, host_variables)
-
-      # Create temporary file with rendered content
-      temp_file = "/tmp/kdeploy_template_#{Time.now.to_i}_#{Process.pid}"
-      File.write(temp_file, rendered_content)
+      temp_file = create_temp_file(rendered_content)
 
       KdeployLogger.info("Uploading rendered template '#{@template_name}' to #{host}:#{processed_remote_path}")
 
+      success = upload_template_file(connection, temp_file, processed_remote_path)
+      cleanup_temp_file(temp_file)
+      success
+    end
+
+    def create_temp_file(content)
+      temp_file = "/tmp/kdeploy_template_#{Time.now.to_i}_#{Process.pid}"
+      File.write(temp_file, content)
+      temp_file
+    end
+
+    def upload_template_file(connection, temp_file, processed_remote_path)
       # Create remote directory first
       connection.execute("mkdir -p #{File.dirname(processed_remote_path)}")
-
       # Upload rendered template
-      success = connection.upload(temp_file, processed_remote_path)
+      connection.upload(temp_file, processed_remote_path)
+    end
 
-      # Cleanup temporary file
+    def cleanup_temp_file(temp_file)
       FileUtils.rm_f(temp_file)
+    end
 
+    def record_execution_result(start_time, success, host)
       duration = Time.now - start_time
       @result = {
         success: success,
@@ -585,18 +612,20 @@ module Kdeploy
       end
 
       success
-    rescue StandardError => e
+    end
+
+    def handle_upload_error(error, start_time, host)
       # Cleanup temporary file on error
-      File.delete(temp_file) if defined?(temp_file) && File.exist?(temp_file)
+      cleanup_temp_file(@temp_file) if defined?(@temp_file) && File.exist?(@temp_file)
 
       duration = Time.now - start_time
       @result = {
         success: false,
         duration: duration,
-        error: e.message
+        error: error.message
       }
 
-      KdeployLogger.error("Template upload failed to #{host}: #{e.message}")
+      KdeployLogger.error("Template upload failed to #{host}: #{error.message}")
       false
     end
   end

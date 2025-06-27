@@ -14,7 +14,7 @@ end
 
 # Run RuboCop
 task :rubocop do
-  sh 'bundle exec rubocop'
+  system 'bundle exec rubocop'
 end
 
 # Auto-commit and push changes
@@ -28,28 +28,18 @@ end
 
 # Documentation task
 task :doc do
-  sh 'bundle exec yard doc'
-end
-
-# Build gem
-task :build do
-  sh 'gem build kdeploy.gemspec'
-end
-
-# Install gem locally
-task install: :build do
-  sh "gem install kdeploy-#{Kdeploy::VERSION}.gem"
+  system 'bundle exec yard doc'
 end
 
 # Clean build artifacts
 task :clean do
-  sh 'rm -f *.gem'
-  sh 'rm -rf doc/'
-  sh 'rm -rf coverage/'
+  system 'rm -f *.gem'
+  system 'rm -rf doc/'
+  system 'rm -rf coverage/'
 end
 
 # Install gem locally
 task :install do
-  sh 'gem build kdeploy.gemspec'
-  sh "gem install kdeploy-#{Kdeploy::VERSION}.gem"
+  system 'gem build kdeploy.gemspec'
+  system "gem install kdeploy-#{Kdeploy::VERSION}.gem"
 end
