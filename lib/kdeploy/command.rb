@@ -18,10 +18,11 @@ module Kdeploy
     def execute(host, connection)
       start_time = Time.now
 
-      KdeployLogger.info("Executing '#{@name}' on #{host}")
-
       # Process command template with host variables
       processed_command = process_command_template(host)
+
+      KdeployLogger.info("🚀 Executing '#{@name}' on #{host}")
+      KdeployLogger.debug("   Command: #{processed_command}")
 
       # Execute with retry logic
       @result = execute_with_retry(connection, processed_command)
@@ -113,13 +114,22 @@ module Kdeploy
 
     def log_result(host, duration)
       if @result[:success]
-        KdeployLogger.info("Command '#{@name}' completed on #{host} in #{duration.round(2)}s")
-        KdeployLogger.debug("STDOUT: #{@result[:stdout]}") unless @result[:stdout].empty?
+        KdeployLogger.info("✅ Command '#{@name}' completed on #{host} in #{duration.round(2)}s")
+        # Show command output at info level for successful commands
+        unless @result[:stdout].strip.empty?
+          KdeployLogger.info('📤 Output:')
+          @result[:stdout].strip.split("\n").each do |line|
+            KdeployLogger.info("   #{line}")
+          end
+        end
       else
         level = @options[:ignore_errors] ? :warn : :error
+        icon = @options[:ignore_errors] ? '⚠️' : '❌'
         KdeployLogger.send(level,
-                           "Command '#{@name}' failed on #{host} in #{duration.round(2)}s (exit code: #{@result[:exit_code]})")
-        KdeployLogger.send(level, "STDERR: #{@result[:stderr]}") unless @result[:stderr].empty?
+                           "#{icon} Command '#{@name}' failed on #{host} in #{duration.round(2)}s (exit code: #{@result[:exit_code]})")
+        KdeployLogger.send(level, "📤 STDERR: #{@result[:stderr]}") unless @result[:stderr].empty?
+        # Also show stdout for failed commands if available
+        KdeployLogger.send(level, "📤 STDOUT: #{@result[:stdout]}") unless @result[:stdout].strip.empty?
       end
     end
   end

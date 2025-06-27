@@ -158,16 +158,10 @@ module Kdeploy
     # @param command [String] Local command to execute
     # @param name [String] Command name (optional)
     def local(command, name: nil)
-      command_name = name || "local: #{command.split.first}"
+      require 'open3'
 
-      result = system(command)
-
-      if result
-        KdeployLogger.info("Local command '#{command_name}' completed successfully")
-      else
-        KdeployLogger.error("Local command '#{command_name}' failed")
-        raise CommandError, "Local command failed: #{command}"
-      end
+      processed_commands = process_heredoc_command(command)
+      processed_commands.each_with_index { |cmd, index| execute_local_command(cmd, name, index, processed_commands.size) }
     end
 
     # Upload file to hosts
@@ -270,6 +264,73 @@ module Kdeploy
     end
 
     private
+
+    # Execute a single local command
+    # @param cmd [String] Command to execute
+    # @param name [String] Base command name
+    # @param index [Integer] Command index
+    # @param total_commands [Integer] Total number of commands
+    def execute_local_command(cmd, name, index, total_commands)
+      require 'open3'
+
+      cmd = cmd.strip
+      return if cmd.empty? || cmd.start_with?('#') # Skip empty lines and comments
+
+      command_name = generate_local_command_name(cmd, name, index, total_commands)
+      processed_cmd = process_local_command_variables(cmd)
+
+      log_local_command_start(command_name, processed_cmd)
+
+      start_time = Time.now
+      stdout, stderr, status = Open3.capture3(processed_cmd)
+      duration = Time.now - start_time
+
+      if status.success?
+        log_local_command_success(command_name, duration, stdout)
+      else
+        log_local_command_failure(command_name, duration, status.exitstatus, stdout, stderr)
+        raise CommandError, "Local command failed: #{cmd}"
+      end
+    end
+
+    # Generate command name for local execution
+    def generate_local_command_name(cmd, name, index, total_commands)
+      return name || "local: #{cmd.split.first || 'script'}" if total_commands == 1
+
+      name ? "#{name}_#{index + 1}" : "local: #{cmd.split.first || 'script'}_#{index + 1}"
+    end
+
+    # Process template variables in local command
+    def process_local_command_variables(cmd)
+      processed_cmd = cmd.dup
+      @pipeline.variables.each do |key, value|
+        processed_cmd = processed_cmd.gsub("{{#{key}}}", value.to_s)
+        processed_cmd = processed_cmd.gsub("${#{key}}", value.to_s)
+      end
+      processed_cmd
+    end
+
+    # Log local command execution start
+    def log_local_command_start(command_name, processed_cmd)
+      KdeployLogger.info("🚀 Executing local command '#{command_name}'")
+      KdeployLogger.debug("   Command: #{processed_cmd}")
+    end
+
+    # Log successful local command completion
+    def log_local_command_success(command_name, duration, stdout)
+      KdeployLogger.info("✅ Local command '#{command_name}' completed in #{duration.round(2)}s")
+      return if stdout.strip.empty?
+
+      KdeployLogger.info('📤 Output:')
+      stdout.strip.split("\n").each { |line| KdeployLogger.info("   #{line}") }
+    end
+
+    # Log failed local command
+    def log_local_command_failure(command_name, duration, exit_code, stdout, stderr)
+      KdeployLogger.error("❌ Local command '#{command_name}' failed in #{duration.round(2)}s (exit code: #{exit_code})")
+      KdeployLogger.error("📤 STDERR: #{stderr}") unless stderr.strip.empty?
+      KdeployLogger.error("📤 STDOUT: #{stdout}") unless stdout.strip.empty?
+    end
 
     # Resolve target hosts from various formats
     # @param target [Array, Symbol, String, nil] Target specification
