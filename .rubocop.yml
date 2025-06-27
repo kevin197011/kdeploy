@@ -74,6 +74,7 @@ Naming/PredicatePrefix:
 Naming/PredicateMethod:
   Exclude:
     - 'spec/**/*' # Mock methods don't need to follow naming conventions
+    - 'lib/kdeploy/dsl.rb' # DSL methods may have various naming patterns
 
 # Lint
 Lint/DuplicateBranch:

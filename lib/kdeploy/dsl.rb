@@ -542,7 +542,7 @@ module Kdeploy
 
       record_execution_result(start_time, success, host)
     rescue StandardError => e
-      handle_upload_error(e, start_time, host)
+      log_upload_failure(e, start_time, host)
     end
 
     private
@@ -614,7 +614,7 @@ module Kdeploy
       success
     end
 
-    def handle_upload_error(error, start_time, host)
+    def log_upload_failure(error, start_time, host)
       # Cleanup temporary file on error
       cleanup_temp_file(@temp_file) if defined?(@temp_file) && File.exist?(@temp_file)
 
