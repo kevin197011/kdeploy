@@ -47,3 +47,9 @@ task :clean do
   sh 'rm -rf doc/'
   sh 'rm -rf coverage/'
 end
+
+# Install gem locally
+task :install do
+  sh 'gem build kdeploy.gemspec'
+  sh "gem install kdeploy-#{Kdeploy::VERSION}.gem"
+end
