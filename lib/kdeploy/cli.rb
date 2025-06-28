@@ -217,15 +217,15 @@ module Kdeploy
     def show_kdeploy_banner
       banner = <<~BANNER
 
-        ██╗  ██╗██████╗ ███████╗██████╗ ██╗      ██████╗ ██╗   ██╗
-        ██║ ██╔╝██╔══██╗██╔════╝██╔══██╗██║     ██╔═══██╗╚██╗ ██╔╝
-        █████╔╝ ██║  ██║█████╗  ██████╔╝██║     ██║   ██║ ╚████╔╝
-        ██╔═██╗ ██║  ██║██╔══╝  ██╔═══╝ ██║     ██║   ██║  ╚██╔╝
-        ██║  ██╗██████╔╝███████╗██║     ███████╗╚██████╔╝   ██║
-        ╚═╝  ╚═╝╚═════╝ ╚══════╝╚═╝     ╚══════╝ ╚═════╝    ╚═╝
+                  _            _
+          /\\ /\\__| | ___ _ __ | | ___  _   _
+         / //_/ _` |/ _ \\ '_ \\| |/ _ \\| | | |
+        / __ \\ (_| |  __/ |_) | | (_) | |_| |
+        \\/  \\/\\__,_|\\___| .__/|_|\\___/ \\__, |
+                        |_|            |___/
 
-        ⚡ Lightweight Agentless Deployment Tool v#{Kdeploy::VERSION}
-        🚀 Deploy with confidence, scale with ease
+                ⚡ Lightweight Agentless Deployment Tool v#{Kdeploy::VERSION}
+                🚀 Deploy with confidence, scale with ease
 
       BANNER
 
