@@ -423,6 +423,19 @@ module Kdeploy
         set 'branch', 'main'
 
         # ===================================================================
+        # MODULAR SCRIPTS (for complex projects)
+        # ===================================================================
+
+        # Include common tasks from external files (optional)
+        # This allows you to organize your deployment scripts modularly
+        include 'scripts/common_tasks.rb' if File.exist?('scripts/common_tasks.rb')
+        include 'scripts/#{project_name}_tasks.rb' if File.exist?('scripts/#{project_name}_tasks.rb')
+
+        # You can also include environment-specific tasks
+        # include 'scripts/production_tasks.rb' if File.exist?('scripts/production_tasks.rb')
+        # include 'scripts/staging_tasks.rb' if File.exist?('scripts/staging_tasks.rb')
+
+        # ===================================================================
         # DEPLOYMENT WORKFLOW
         # ===================================================================
 
@@ -557,6 +570,25 @@ module Kdeploy
           run 'echo "✅ Full deployment workflow guide completed"'
         end
 
+        # Example of using common tasks (from common_tasks.rb)
+        # Uncomment these to use tasks from the included common_tasks.rb file:
+
+        # task 'full_setup_with_common_tasks' do
+        #   run_task 'pre_deploy_checks'       # From common_tasks.rb
+        #   run_task 'setup_environment'       # From common_tasks.rb
+        #   run_task 'security_hardening'      # From common_tasks.rb
+        #   run_task 'performance_tuning'      # From common_tasks.rb
+        #   run_task 'deploy'                  # From this file
+        #   run_task 'verify_deployment'       # From common_tasks.rb
+        # end
+
+        # task 'emergency_procedures_demo' do
+        #   # These tasks are available from common_tasks.rb:
+        #   # run_task 'emergency_stop'         # Stop all services
+        #   # run_task 'emergency_start'        # Start all services
+        #   # run_task 'health_check_all'       # Comprehensive health check
+        # end
+
         # Rollback task (for emergencies)
         task 'rollback', on: :webservers do
           run 'echo "🔄 Rolling back on {{hostname}}..."'
@@ -598,6 +630,11 @@ module Kdeploy
         local 'echo "   1. Run health checks: kdeploy deploy scripts/monitoring.rb"'
         local 'echo "   2. Monitor logs and performance"'
         local 'echo "   3. Create backups: kdeploy deploy scripts/backup.rb"'
+        local 'echo ""'
+        local 'echo "🔧 Modular script usage examples:"'
+        local 'echo "   - Individual tasks: kdeploy deploy scripts/common_tasks.rb --task setup_environment"'
+        local 'echo "   - Security hardening: kdeploy deploy scripts/common_tasks.rb --task security_hardening"'
+        local 'echo "   - Emergency procedures: kdeploy deploy scripts/common_tasks.rb --task emergency_stop"'
         local 'echo ""'
         local 'echo "📊 View deployment statistics: kdeploy stats summary"'
 
@@ -1317,6 +1354,250 @@ module Kdeploy
 
       File.write("#{project_name}/scripts/cleanup.rb", cleanup_script)
       info "Created script: #{project_name}/scripts/cleanup.rb"
+
+      # Create common tasks script (modular example)
+      common_tasks_script = <<~RUBY
+        # frozen_string_literal: true
+
+        # Common tasks for #{project_name}
+        # This file demonstrates modular script organization
+        #
+        # To use this file, include it in your main deployment script:
+        # include 'scripts/common_tasks.rb' if File.exist?('scripts/common_tasks.rb')
+
+        # ===================================================================
+        # COMMON UTILITY TASKS
+        # ===================================================================
+
+        # Shared pre-deployment checks
+        task 'pre_deploy_checks' do
+          local 'echo "🔍 Running pre-deployment checks..."'
+          local 'echo "Current user: $(whoami)"'
+          local 'echo "Current directory: $(pwd)"'
+          local 'echo "Git status:" && git status --porcelain || echo "Not a git repository"'
+          local 'echo "✅ Pre-deployment checks completed"'
+        end
+
+        # Common environment setup
+        task 'setup_environment', on: :all do
+          run 'echo "Setting up environment on {{hostname}}..."'
+
+          # Set timezone
+          run 'sudo timedatectl set-timezone UTC', ignore_errors: true
+
+          # Update system packages
+          run 'sudo apt-get update -qq', ignore_errors: true
+
+          # Install common utilities
+          run 'sudo apt-get install -y -qq htop curl wget vim git unzip', ignore_errors: true
+
+          run 'echo "✅ Environment setup completed on {{hostname}}"'
+        end
+
+        # Common SSL certificate setup
+        task 'setup_ssl', on: :webservers do
+          run 'echo "Setting up SSL certificates on {{hostname}}..."'
+
+          # Install certbot
+          run 'sudo apt-get install -y certbot python3-certbot-nginx', ignore_errors: true
+
+          # Generate certificate (this is a dry run example)
+          run 'sudo certbot --nginx --dry-run -d {{hostname}} || echo "SSL setup skipped (dry run)"',
+              ignore_errors: true
+
+          run 'echo "✅ SSL setup completed on {{hostname}}"'
+        end
+
+        # Common log rotation setup
+        task 'setup_log_rotation', on: :all do
+          run 'echo "Setting up log rotation on {{hostname}}..."'
+
+          # Application log rotation
+          run <<~LOGROTATE
+            sudo tee /etc/logrotate.d/{{application}} > /dev/null << 'EOF'
+            {{deploy_to}}/shared/logs/*.log {
+                daily
+                missingok
+                rotate 52
+                compress
+                delaycompress
+                notifempty
+                create 644 {{user}} {{user}}
+                postrotate
+                    sudo systemctl reload {{application}} || true
+                endscript
+            }
+            EOF
+          LOGROTATE
+
+          run 'echo "✅ Log rotation setup completed on {{hostname}}"'
+        end
+
+        # Common system monitoring setup
+        task 'setup_monitoring', on: :all do
+          run 'echo "Setting up basic monitoring on {{hostname}}..."'
+
+          # Install system monitoring tools
+          run 'sudo apt-get install -y htop iotop iftop nethogs', ignore_errors: true
+
+          # Setup basic disk space monitoring
+          run <<~MONITORING
+            sudo tee /usr/local/bin/disk-alert.sh > /dev/null << 'EOF'
+            #!/bin/bash
+            THRESHOLD=90
+            USAGE=$(df / | awk 'NR==2 {print $5}' | sed 's/%//')
+            if [ $USAGE -gt $THRESHOLD ]; then
+                echo "Warning: Disk usage is $USAGE% on $(hostname)"
+                logger "Disk usage alert: $USAGE% on $(hostname)"
+            fi
+            EOF
+          MONITORING
+
+          run 'sudo chmod +x /usr/local/bin/disk-alert.sh'
+
+          # Add to crontab
+          run 'echo "0 */6 * * * /usr/local/bin/disk-alert.sh" | sudo crontab -', ignore_errors: true
+
+          run 'echo "✅ Monitoring setup completed on {{hostname}}"'
+        end
+
+        # Common security hardening
+        task 'security_hardening', on: :all do
+          run 'echo "Applying security hardening on {{hostname}}..."'
+
+          # Disable root login
+          run 'sudo sed -i "s/PermitRootLogin yes/PermitRootLogin no/" /etc/ssh/sshd_config', ignore_errors: true
+
+          # Configure firewall basics
+          run 'sudo ufw --force reset', ignore_errors: true
+          run 'sudo ufw default deny incoming', ignore_errors: true
+          run 'sudo ufw default allow outgoing', ignore_errors: true
+          run 'sudo ufw allow ssh', ignore_errors: true
+          run 'sudo ufw allow {{nginx_port || 80}}', ignore_errors: true
+          run 'sudo ufw allow {{nginx_ssl_port || 443}}', ignore_errors: true
+          run 'sudo ufw --force enable', ignore_errors: true
+
+          # Install fail2ban
+          run 'sudo apt-get install -y fail2ban', ignore_errors: true
+          run 'sudo systemctl enable fail2ban', ignore_errors: true
+          run 'sudo systemctl start fail2ban', ignore_errors: true
+
+          run 'echo "✅ Security hardening completed on {{hostname}}"'
+        end
+
+        # Common performance tuning
+        task 'performance_tuning', on: :all do
+          run 'echo "Applying performance tuning on {{hostname}}..."'
+
+          # System limits
+          run <<~LIMITS
+            sudo tee -a /etc/security/limits.conf > /dev/null << 'EOF'
+            * soft nofile 65536
+            * hard nofile 65536
+            * soft nproc 32768
+            * hard nproc 32768
+            EOF
+          LIMITS
+
+          # Kernel parameters
+          run <<~SYSCTL
+            sudo tee -a /etc/sysctl.conf > /dev/null << 'EOF'
+            # Network performance
+            net.core.rmem_max = 16777216
+            net.core.wmem_max = 16777216
+            net.ipv4.tcp_rmem = 4096 65536 16777216
+            net.ipv4.tcp_wmem = 4096 65536 16777216
+            EOF
+          SYSCTL
+
+          run 'sudo sysctl -p', ignore_errors: true
+
+          run 'echo "✅ Performance tuning completed on {{hostname}}"'
+        end
+
+        # ===================================================================
+        # COMMON UTILITY FUNCTIONS
+        # ===================================================================
+
+        # Health check wrapper
+        task 'health_check_all' do
+          local 'echo "🏥 Running comprehensive health checks..."'
+
+          # You can call other scripts from here
+          local 'echo "1. System health check"'
+          # local 'kdeploy deploy scripts/monitoring.rb --task system_health'
+
+          local 'echo "2. Application health check"'
+          # local 'kdeploy deploy scripts/monitoring.rb --task app_health'
+
+          local 'echo "3. Service status check"'
+          # local 'kdeploy deploy scripts/monitoring.rb --task service_status'
+
+          local 'echo "✅ Health checks completed"'
+        end
+
+        # Deployment verification
+        task 'verify_deployment', on: :webservers do
+          run 'echo "🔍 Verifying deployment on {{hostname}}..."'
+
+          # Check if application directory exists
+          run 'test -d {{deploy_to}} && echo "✅ Application directory exists" || echo "❌ Application directory missing"'
+
+          # Check if application is running
+          run 'systemctl is-active {{application}} && echo "✅ Application service is running" || echo "❌ Application service not running"', ignore_errors: true
+
+          # Check if application responds
+          run 'curl -f http://localhost:{{app_port || 3000}}/health && echo "✅ Application responds to health check" || echo "❌ Application health check failed"',
+              ignore_errors: true, timeout: 10
+
+          run 'echo "✅ Deployment verification completed on {{hostname}}"'
+        end
+
+        # ===================================================================
+        # EMERGENCY PROCEDURES
+        # ===================================================================
+
+        # Emergency stop all services
+        task 'emergency_stop', on: :all do
+          run 'echo "🚨 Emergency stop initiated on {{hostname}}"'
+          run 'sudo systemctl stop {{application}}', ignore_errors: true
+          run 'sudo systemctl stop nginx', ignore_errors: true
+          run 'echo "🛑 Services stopped on {{hostname}}"'
+        end
+
+        # Emergency start all services
+        task 'emergency_start', on: :all do
+          run 'echo "🚨 Emergency start initiated on {{hostname}}"'
+          run 'sudo systemctl start nginx', ignore_errors: true
+          run 'sudo systemctl start {{application}}', ignore_errors: true
+          run 'echo "🚀 Services started on {{hostname}}"'
+        end
+
+        # ===================================================================
+        # USAGE EXAMPLES
+        # ===================================================================
+        #
+        # This file can be included in your main deploy.rb script:
+        #
+        # include 'scripts/common_tasks.rb' if File.exist?('scripts/common_tasks.rb')
+        #
+        # Then you can call these tasks from your deployment workflow:
+        #
+        # task 'full_setup' do
+        #   run_task 'pre_deploy_checks'
+        #   run_task 'setup_environment'
+        #   run_task 'security_hardening'
+        #   run_task 'performance_tuning'
+        # end
+        #
+        # Or run them individually:
+        # kdeploy deploy scripts/common_tasks.rb --task setup_environment
+        # kdeploy deploy scripts/common_tasks.rb --task security_hardening
+        #
+      RUBY
+
+      File.write("#{project_name}/scripts/common_tasks.rb", common_tasks_script)
+      info "Created script: #{project_name}/scripts/common_tasks.rb"
     end
 
     def create_sample_templates(project_name)
