@@ -34,6 +34,7 @@ Kdeploy 是一个现代化的轻量级 agentless 运维部署工具，类似于 
 - 🖥️ **混合执行**: 支持本地命令执行和混合部署场景
 - 📊 **统计分析**: 自动收集部署统计，支持性能分析和趋势监控
 - 🔄 **脚本库**: 丰富的预制脚本模板，覆盖完整部署生命周期
+- 🧩 **模块化架构**: 支持脚本模块化组织，可复用通用任务组件
 - 🛡️ **错误恢复**: 智能错误处理和自动重试机制
 
 ## 📦 安装
@@ -74,6 +75,7 @@ myapp/
 ├── config/                     # 配置文件目录
 │   └── kdeploy.yml            # 全局配置文件
 ├── scripts/                   # 🆕 完整脚本库
+│   ├── common_tasks.rb        # 🆕 通用任务模块(可复用)
 │   ├── setup.rb              # 服务器初始化
 │   ├── database.rb            # 数据库管理
 │   ├── backup.rb              # 备份操作
@@ -203,6 +205,18 @@ $ kdeploy deploy scripts/rollback.rb
 $ kdeploy deploy scripts/cleanup.rb
 ```
 
+#### 🧩 通用任务模块
+```bash
+# 使用通用任务模块进行基础设置
+$ kdeploy deploy scripts/common_tasks.rb --task setup_environment
+
+# 执行安全加固
+$ kdeploy deploy scripts/common_tasks.rb --task security_hardening
+
+# 在主脚本中引入模块化任务
+# deploy.rb 中自动包含: include 'scripts/common_tasks.rb' if File.exist?('scripts/common_tasks.rb')
+```
+
 ### 4. 部署工作流示例
 
 ```bash
@@ -296,6 +310,224 @@ $ kdeploy stats summary
   Session Duration: 2h 34m
   Most Active Day: 2025-06-28 (8 deployments)
 ```
+
+## 🔧 模块化脚本组织
+
+Kdeploy 支持模块化脚本组织，让您可以将复杂的部署逻辑拆分成可重用的组件。
+
+### 📋 模块化引入语法
+
+在 `deploy.rb` 主脚本中，您可以引入其他脚本文件：
+
+```ruby
+# 引入通用任务模块（如果文件存在）
+include 'scripts/common_tasks.rb' if File.exist?('scripts/common_tasks.rb')
+
+# 引入项目特定任务
+include 'scripts/myapp_tasks.rb' if File.exist?('scripts/myapp_tasks.rb')
+
+# 引入环境特定任务
+include 'scripts/production_tasks.rb' if File.exist?('scripts/production_tasks.rb')
+include 'scripts/staging_tasks.rb' if File.exist?('scripts/staging_tasks.rb')
+```
+
+### 🏗️ common_tasks.rb - 通用任务库
+
+Kdeploy 自动生成 `scripts/common_tasks.rb` 文件，包含常用的基础设施任务：
+
+#### 环境设置任务
+```ruby
+# 基础环境设置
+task 'setup_environment', on: :all do
+  run 'sudo timedatectl set-timezone UTC', ignore_errors: true
+  run 'sudo apt-get update -qq', ignore_errors: true
+  run 'sudo apt-get install -y -qq htop curl wget vim git unzip', ignore_errors: true
+end
+
+# SSL证书配置
+task 'setup_ssl', on: :webservers do
+  run 'sudo apt-get install -y certbot python3-certbot-nginx', ignore_errors: true
+  run 'sudo certbot --nginx --dry-run -d {{hostname}}', ignore_errors: true
+end
+
+# 日志轮转配置
+task 'setup_log_rotation', on: :all do
+  run <<~LOGROTATE
+    sudo tee /etc/logrotate.d/{{application}} > /dev/null << 'EOF'
+    {{deploy_to}}/shared/logs/*.log {
+        daily
+        missingok
+        rotate 52
+        compress
+        delaycompress
+        notifempty
+        create 644 {{user}} {{user}}
+    }
+    EOF
+  LOGROTATE
+end
+```
+
+#### 安全加固任务
+```ruby
+# 系统安全强化
+task 'security_hardening', on: :all do
+  # 禁用root登录
+  run 'sudo sed -i "s/PermitRootLogin yes/PermitRootLogin no/" /etc/ssh/sshd_config', ignore_errors: true
+
+  # 配置防火墙
+  run 'sudo ufw --force reset', ignore_errors: true
+  run 'sudo ufw default deny incoming', ignore_errors: true
+  run 'sudo ufw default allow outgoing', ignore_errors: true
+  run 'sudo ufw allow ssh', ignore_errors: true
+  run 'sudo ufw allow {{nginx_port || 80}}', ignore_errors: true
+  run 'sudo ufw --force enable', ignore_errors: true
+
+  # 安装fail2ban
+  run 'sudo apt-get install -y fail2ban', ignore_errors: true
+  run 'sudo systemctl enable fail2ban', ignore_errors: true
+end
+```
+
+#### 应急处理任务
+```ruby
+# 紧急停止所有服务
+task 'emergency_stop', on: :all do
+  run 'echo "🚨 Emergency stop initiated on {{hostname}}"'
+  run 'sudo systemctl stop {{application}}', ignore_errors: true
+  run 'sudo systemctl stop nginx', ignore_errors: true
+end
+
+# 紧急启动所有服务
+task 'emergency_start', on: :all do
+  run 'echo "🚨 Emergency start initiated on {{hostname}}"'
+  run 'sudo systemctl start nginx', ignore_errors: true
+  run 'sudo systemctl start {{application}}', ignore_errors: true
+end
+```
+
+### 🔗 使用模块化任务
+
+#### 在主脚本中调用模块化任务
+
+```ruby
+# deploy.rb - 主部署脚本
+include 'scripts/common_tasks.rb' if File.exist?('scripts/common_tasks.rb')
+
+# 完整部署工作流，使用通用任务
+task 'full_setup_with_common_tasks' do
+  run_task 'pre_deploy_checks'       # 来自 common_tasks.rb
+  run_task 'setup_environment'       # 来自 common_tasks.rb
+  run_task 'security_hardening'      # 来自 common_tasks.rb
+  run_task 'performance_tuning'      # 来自 common_tasks.rb
+  run_task 'deploy'                  # 来自当前文件
+  run_task 'verify_deployment'       # 来自 common_tasks.rb
+end
+
+# 应急处理演示
+task 'emergency_procedures_demo' do
+  # 这些任务来自 common_tasks.rb:
+  # run_task 'emergency_stop'         # 停止所有服务
+  # run_task 'emergency_start'        # 启动所有服务
+  # run_task 'health_check_all'       # 综合健康检查
+end
+```
+
+#### 单独执行模块化任务
+
+```bash
+# 执行通用环境设置
+kdeploy deploy scripts/common_tasks.rb --task setup_environment
+
+# 执行安全加固
+kdeploy deploy scripts/common_tasks.rb --task security_hardening
+
+# 应急操作
+kdeploy deploy scripts/common_tasks.rb --task emergency_stop
+kdeploy deploy scripts/common_tasks.rb --task emergency_start
+
+# 部署验证
+kdeploy deploy scripts/common_tasks.rb --task verify_deployment
+```
+
+### 📁 项目特定任务模块
+
+创建项目特定的任务文件：
+
+```ruby
+# scripts/myapp_tasks.rb
+task 'install_nodejs', on: :webservers do
+  run 'curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -'
+  run 'sudo apt-get install -y nodejs'
+  run 'node --version && npm --version'
+end
+
+task 'build_frontend', on: :webservers do
+  run 'cd {{deploy_to}} && npm install'
+  run 'cd {{deploy_to}} && npm run build'
+end
+
+task 'deploy_myapp' do
+  run_task 'setup_environment'    # 来自 common_tasks.rb
+  run_task 'install_nodejs'       # 来自当前文件
+  run_task 'build_frontend'       # 来自当前文件
+  run_task 'verify_deployment'    # 来自 common_tasks.rb
+end
+```
+
+### 🌍 环境特定任务
+
+```ruby
+# scripts/production_tasks.rb
+task 'production_ssl_setup', on: :webservers do
+  run 'sudo certbot --nginx -d {{hostname}} --non-interactive --agree-tos --email admin@{{hostname}}'
+end
+
+task 'production_monitoring', on: :all do
+  run 'sudo apt-get install -y datadog-agent'
+  run 'sudo systemctl enable datadog-agent'
+end
+
+# scripts/staging_tasks.rb
+task 'staging_debug_mode', on: :webservers do
+  run 'export DEBUG=true'
+  run 'export LOG_LEVEL=debug'
+end
+```
+
+### 💡 模块化最佳实践
+
+1. **按功能分组**: 将相关任务放在同一个模块中
+2. **条件引入**: 使用 `if File.exist?` 确保文件存在性检查
+3. **任务命名**: 使用清晰的任务名称，避免冲突
+4. **文档注释**: 为每个模块添加详细的使用说明
+5. **测试验证**: 使用 `kdeploy validate` 验证脚本语法
+
+### 🚀 模块化工作流示例
+
+```bash
+# 1. 完整的生产环境部署
+kdeploy deploy deploy.rb --task full_setup_with_common_tasks
+
+# 2. 分步骤执行
+kdeploy deploy scripts/common_tasks.rb --task setup_environment
+kdeploy deploy scripts/common_tasks.rb --task security_hardening
+kdeploy deploy deploy.rb --task deploy
+kdeploy deploy scripts/common_tasks.rb --task verify_deployment
+
+# 3. 环境特定配置
+kdeploy deploy scripts/production_tasks.rb --task production_ssl_setup
+
+# 4. 应急处理
+kdeploy deploy scripts/common_tasks.rb --task emergency_stop
+kdeploy deploy scripts/common_tasks.rb --task emergency_start
+```
+
+这种模块化组织方式让您可以：
+- 🔄 **复用代码**: 在多个项目间共享通用任务
+- 🎯 **专注职责**: 每个模块专注特定功能领域
+- 🔧 **灵活组合**: 根据需要灵活组合不同模块
+- 📝 **易于维护**: 模块化结构便于维护和测试
 
 ## 🛠️ 脚本库详解
 
