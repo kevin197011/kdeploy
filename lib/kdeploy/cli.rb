@@ -882,7 +882,7 @@ module Kdeploy
 
       # Deployment Statistics
       puts "\n📦 Deployment Statistics".colorize(:yellow)
-      if deployment_summary[:total_deployments] > 0
+      if deployment_summary[:total_deployments].positive?
         puts "  Total Deployments: #{deployment_summary[:total_deployments]}"
         puts "  Successful: #{deployment_summary[:successful_deployments]} (#{deployment_summary[:success_rate]}%)"
         puts "  Failed: #{deployment_summary[:failed_deployments]}"
@@ -894,7 +894,7 @@ module Kdeploy
 
       # Task Statistics
       puts "\n🔧 Task Statistics".colorize(:yellow)
-      if task_summary[:total_task_executions] > 0
+      if task_summary[:total_task_executions].positive?
         puts "  Total Task Executions: #{task_summary[:total_task_executions]}"
         puts "  Unique Tasks: #{task_summary[:unique_tasks]}"
 
@@ -922,7 +922,7 @@ module Kdeploy
       puts "\n📦 Deployment Statistics (Last #{options[:days]} days)".colorize(:cyan)
       puts '=' * 60
 
-      return puts 'No deployments found' if summary[:total_deployments] == 0
+      return puts 'No deployments found' if summary[:total_deployments].zero?
 
       puts "Total Deployments: #{summary[:total_deployments]}"
       puts "Successful: #{summary[:successful_deployments]} (#{summary[:success_rate]}%)"
@@ -938,7 +938,7 @@ module Kdeploy
       puts "\n🔧 Task Statistics (Last #{options[:days]} days)".colorize(:cyan)
       puts '=' * 60
 
-      return puts 'No task executions found' if summary[:total_task_executions] == 0
+      return puts 'No task executions found' if summary[:total_task_executions].zero?
 
       puts "Total Executions: #{summary[:total_task_executions]}"
       puts "Unique Tasks: #{summary[:unique_tasks]}"

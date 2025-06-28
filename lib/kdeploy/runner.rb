@@ -120,7 +120,7 @@ module Kdeploy
       end
 
       # Log task details
-      if result[:results] && result[:results].is_a?(Array)
+      if result[:results].is_a?(Array)
         result[:results].each do |task_result|
           status = task_result[:success] ? '✅' : '❌'
           success_info = "#{task_result[:success_count]}/#{task_result[:hosts_count]} hosts successful"
