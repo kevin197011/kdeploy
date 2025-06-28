@@ -1,40 +1,50 @@
 # frozen_string_literal: true
 
-# Simple kdeploy test deployment script
+# Simple kdeploy test deployment script - only using local commands
 
 # Set global variables
 set 'application', 'myapp'
 set 'hostname', 'localhost'
+set 'version', '1.0.0'
 
-# Test local commands (these work without SSH)
+# All commands are executed locally, no SSH required
 local 'echo "=== Starting kdeploy deployment process ==="'
+local 'echo "Application: {{application}}"'
+local 'echo "Version: {{version}}"'
+local 'echo "Target: {{hostname}}"'
 local 'echo "Current user: $(whoami)"'
 local 'echo "Current date: $(date)"'
 
-# For demonstration with output, let's create a mock host that would show the process
-# In practice, you'd use real hosts here
+local 'echo "=== Preparation Phase ==="'
+local 'echo "Preparing deployment environment..."'
+local 'mkdir -p /tmp/kdeploy-test'
+local 'echo "Environment prepared!"'
 
-# Uncomment the lines below to test with mock/real SSH hosts:
-# host 'localhost', user: ENV.fetch('USER', nil), port: 22, roles: [:test]
-#
-# task 'test_deployment', on: :test do
-#   run 'echo "Testing kdeploy deployment on {{hostname}}..."'
-#   run 'echo "Deploying application to {{hostname}}..."'
-#
-#   run <<~EOS
-#     echo "Running system checks..."
-#     uptime
-#     echo "Listing temp files:"
-#     ls /tmp | head -5
-#   EOS
-# end
+local 'echo "=== Build Phase ==="'
+local 'echo "Building application..."'
+local 'sleep 1'
+local 'echo "Build completed successfully!"'
 
-# For now, demonstrate with local commands that show the heredoc functionality
-task 'preparation_task' do
-  local <<~SCRIPT
-    echo "=== Preparation Phase ==="
-    echo "Deploying application: myapp"
-    echo "Target environment: localhost"
-    echo "Preparation completed!"
-  SCRIPT
-end
+local 'echo "=== Testing Phase ==="'
+local 'echo "Running tests..."'
+local 'echo "Test 1: Basic functionality... PASSED"'
+local 'echo "Test 2: Integration tests... PASSED"'
+local 'echo "All tests passed!"'
+
+local 'echo "=== Deployment Phase ==="'
+local 'echo "Deploying to {{hostname}}..."'
+local 'echo "{{application}} {{version}}" > /tmp/kdeploy-test/version.txt'
+local 'echo "Application deployed to /tmp/kdeploy-test/"'
+
+local 'echo "=== Verification Phase ==="'
+local 'echo "Verifying deployment..."'
+local 'cat /tmp/kdeploy-test/version.txt'
+local 'echo "Deployment verification completed!"'
+
+local 'echo "=== Cleanup Phase ==="'
+local 'echo "Cleaning up temporary files..."'
+local 'rm -rf /tmp/kdeploy-test'
+local 'echo "Cleanup completed!"'
+
+local 'echo "=== Deployment Complete ==="'
+local 'echo "{{application}} {{version}} successfully deployed!"'

@@ -102,7 +102,14 @@ module Kdeploy
       cutoff_time = Time.now - (days * 24 * 60 * 60)
       recent_tasks = @data[:tasks].select { |t| t[:timestamp] >= cutoff_time.to_f }
 
-      return { period_days: days, tasks: {} } if recent_tasks.empty?
+      if recent_tasks.empty?
+        return {
+          period_days: days,
+          total_task_executions: 0,
+          unique_tasks: 0,
+          tasks: {}
+        }
+      end
 
       task_groups = recent_tasks.group_by { |t| t[:name] }
       task_stats = {}
