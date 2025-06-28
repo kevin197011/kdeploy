@@ -60,27 +60,55 @@ module Kdeploy
     end
 
     desc 'init [PROJECT_NAME]', 'Initialize new deployment project'
-    option :name, aliases: '-n', desc: 'Project name'
+    option :name, aliases: '-n', desc: 'Specify project name'
     def init(project_name = nil)
+      show_kdeploy_banner
       project_name ||= options[:name] || File.basename(Dir.pwd)
 
-      info "Initializing kdeploy project: #{project_name}"
+      puts ''
+      puts "🆕 Initializing kdeploy project: #{project_name}".colorize(:yellow)
+      puts ''
 
       create_project_structure(project_name)
       create_sample_files(project_name)
 
-      success 'Project initialized successfully!'
-      info "Edit #{project_name}/deploy.rb to configure your deployment"
+      puts ''
+      puts '✅ Project initialized successfully!'.colorize(:green)
+      puts ''
+      puts '📁 Project Structure Created:'.colorize(:cyan)
+      puts "  #{project_name}/".colorize(:light_blue)
+      puts '  ├── deploy.rb           # Main deployment script'.colorize(:light_blue)
+      puts '  ├── config/             # Configuration files'.colorize(:light_blue)
+      puts '  │   └── deploy.yml      # Deployment configuration'.colorize(:light_blue)
+      puts '  ├── scripts/            # Additional scripts'.colorize(:light_blue)
+      puts '  │   └── setup.rb        # Server setup script'.colorize(:light_blue)
+      puts '  └── templates/          # Configuration templates'.colorize(:light_blue)
+      puts '      ├── nginx.conf.erb  # Nginx configuration'.colorize(:light_blue)
+      puts '      └── app.service.erb # Systemd service'.colorize(:light_blue)
+      puts ''
+      puts '🚀 Next Steps:'.colorize(:cyan)
+      puts "  1. cd #{project_name}".colorize(:light_blue)
+      puts '  2. Edit deploy.rb to configure your deployment'.colorize(:light_blue)
+      puts '  3. Add your servers to config/deploy.yml'.colorize(:light_blue)
+      puts '  4. Run: kdeploy deploy deploy.rb'.colorize(:light_blue)
+      puts ''
+      puts '💡 Need help? Run: kdeploy help deploy'.colorize(:yellow)
+      puts ''
     end
 
     desc 'validate SCRIPT', 'Validate deployment script'
     option :config, aliases: '-c', desc: 'Configuration file path'
     option :inventory, aliases: '-i', desc: 'Inventory file path'
     def validate(script_file)
+      show_kdeploy_banner
       setup_configuration
 
+      puts ''
+      puts "🔍 Validating deployment script: #{script_file}".colorize(:yellow)
+      puts ''
+
       unless File.exist?(script_file)
-        error "Script file not found: #{script_file}"
+        error "❌ Script file not found: #{script_file}"
         exit 1
       end
 
@@ -89,40 +117,93 @@ module Kdeploy
         validation_errors = pipeline.validate
 
         if validation_errors.empty?
-          success '✅ Script validation passed'
-          info "Pipeline: #{pipeline.name}"
-          info "Hosts: #{pipeline.hosts.size}"
-          info "Tasks: #{pipeline.tasks.size}"
+          puts '✅ Script validation passed'.colorize(:green)
+          puts ''
+          puts '📋 Pipeline Summary:'.colorize(:cyan)
+          puts "  Name: #{pipeline.name}".colorize(:light_blue)
+          puts "  Hosts: #{pipeline.hosts.size}".colorize(:light_blue)
+          puts "  Tasks: #{pipeline.tasks.size}".colorize(:light_blue)
+
+          if pipeline.hosts.any?
+            puts ''
+            puts '🖥️  Target Hosts:'.colorize(:cyan)
+            pipeline.hosts.each do |host|
+              puts "  • #{host.hostname}:#{host.port} (#{host.user})".colorize(:light_blue)
+            end
+          end
+
+          if pipeline.tasks.any?
+            puts ''
+            puts '🔧 Tasks to Execute:'.colorize(:cyan)
+            pipeline.tasks.each_with_index do |task, index|
+              puts "  #{index + 1}. #{task.name}".colorize(:light_blue)
+            end
+          end
+          puts ''
         else
-          error '❌ Script validation failed:'
-          validation_errors.each { |err| error "  - #{err}" }
+          puts '❌ Script validation failed:'.colorize(:red)
+          puts ''
+          validation_errors.each { |err| puts "  • #{err}".colorize(:red) }
+          puts ''
           exit 1
         end
       rescue Kdeploy::Error => e
-        error "Validation failed: #{e.message}"
+        puts "❌ Validation failed: #{e.message}".colorize(:red)
+        puts ''
         exit 1
       end
     end
 
     desc 'config', 'Show configuration'
     option :config, aliases: '-c', desc: 'Configuration file path'
+    option :inventory, aliases: '-i', desc: 'Inventory file path'
+    option :verbose, aliases: '-v', type: :boolean, desc: 'Enable verbose output'
+    option :log_file, aliases: '-l', desc: 'Log file path'
     def config
+      show_kdeploy_banner
       setup_configuration
 
       config = Kdeploy.configuration
 
-      info 'Kdeploy Configuration:'
-      info "  Max concurrent tasks: #{config.max_concurrent_tasks}"
-      info "  SSH timeout: #{config.ssh_timeout}s"
-      info "  Command timeout: #{config.command_timeout}s"
-      info "  Retry count: #{config.retry_count}"
-      info "  Retry delay: #{config.retry_delay}s"
-      info "  Log level: #{config.log_level}"
-      info "  Log file: #{config.log_file || 'stdout'}"
-      info "  Inventory file: #{config.inventory_file}"
-      info "  Template directory: #{config.template_dir}"
-      info "  Default user: #{config.default_user}"
-      info "  Default port: #{config.default_port}"
+      puts ''
+      puts '⚙️  Current Configuration'.colorize(:yellow)
+      puts '=' * 50
+
+      puts ''
+      puts '🔧 Execution Settings'.colorize(:cyan)
+      puts "  Max Concurrent Tasks: #{config.max_concurrent_tasks}".colorize(:light_blue)
+      puts "  Retry Count: #{config.retry_count}".colorize(:light_blue)
+      puts "  Retry Delay: #{config.retry_delay}s".colorize(:light_blue)
+
+      puts ''
+      puts '🌐 Network & SSH Settings'.colorize(:cyan)
+      puts "  SSH Timeout: #{config.ssh_timeout}s".colorize(:light_blue)
+      puts "  Command Timeout: #{config.command_timeout}s".colorize(:light_blue)
+      puts "  Default User: #{config.default_user}".colorize(:light_blue)
+      puts "  Default Port: #{config.default_port}".colorize(:light_blue)
+
+      puts ''
+      puts '📁 File & Directory Settings'.colorize(:cyan)
+      puts "  Inventory File: #{config.inventory_file || 'not specified'}".colorize(:light_blue)
+      puts "  Template Directory: #{config.template_dir}".colorize(:light_blue)
+
+      puts ''
+      puts '📋 Logging Settings'.colorize(:cyan)
+      puts "  Log Level: #{config.log_level}".colorize(:light_blue)
+      puts "  Log File: #{config.log_file || 'stdout'}".colorize(:light_blue)
+
+      # Show SSH options if available
+      if config.respond_to?(:ssh_options) && config.ssh_options && !config.ssh_options.empty?
+        puts ''
+        puts '🔐 SSH Options'.colorize(:cyan)
+        config.ssh_options.each do |key, value|
+          puts "  #{key.to_s.capitalize.gsub('_', ' ')}: #{value}".colorize(:light_blue)
+        end
+      end
+
+      puts ''
+      puts '💡 Use --config FILE to load custom configuration'.colorize(:yellow)
+      puts ''
     end
 
     desc 'version', 'Show version'
