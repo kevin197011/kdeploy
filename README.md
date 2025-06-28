@@ -13,7 +13,7 @@
 ```
 
 [![Gem Version](https://badge.fury.io/rb/kdeploy.svg)](https://badge.fury.io/rb/kdeploy)
-[![Build Status](https://github.com/kdeploy/kdeploy/workflows/CI/badge.svg)](https://github.com/kdeploy/kdeploy/actions)
+[![Build Status](https://github.com/kevin197011/kdeploy/workflows/CI/badge.svg)](https://github.com/kevin197011/kdeploy/actions)
 
 Kdeploy 是一个现代化的轻量级 agentless 运维部署工具，类似于 Chef、Puppet 和 Ansible。它采用优雅的 Ruby DSL 语法，支持并发执行、统计分析和完整的部署生命周期管理。
 
@@ -1015,15 +1015,15 @@ tail -f kdeploy.log
 
 ## 🔗 相关链接
 
-- [项目主页](https://github.com/kdeploy/kdeploy)
-- [文档中心](https://github.com/kdeploy/kdeploy/wiki)
-- [问题反馈](https://github.com/kdeploy/kdeploy/issues)
-- [发布日志](https://github.com/kdeploy/kdeploy/releases)
+- [项目主页](https://github.com/kevin197011/kdeploy)
+- [文档中心](https://github.com/kevin197011/kdeploy/wiki)
+- [问题反馈](https://github.com/kevin197011/kdeploy/issues)
+- [发布日志](https://github.com/kevin197011/kdeploy/releases)
 
 ## 💬 社区支持
 
-- GitHub Issues: [报告问题](https://github.com/kdeploy/kdeploy/issues)
-- GitHub Discussions: [社区讨论](https://github.com/kdeploy/kdeploy/discussions)
+- GitHub Issues: [报告问题](https://github.com/kevin197011/kdeploy/issues)
+- GitHub Discussions: [社区讨论](https://github.com/kevin197011/kdeploy/discussions)
 
 ---
 
