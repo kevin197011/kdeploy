@@ -781,6 +781,7 @@ module Kdeploy
     end
 
     def show_summary_stats
+      show_kdeploy_banner
       stats = Kdeploy.statistics
       deployment_summary = stats.deployment_summary(days: options[:days])
       task_summary = stats.task_summary(days: options[:days])
@@ -799,6 +800,7 @@ module Kdeploy
     end
 
     def show_deployment_stats
+      show_kdeploy_banner
       stats = Kdeploy.statistics
       summary = stats.deployment_summary(days: options[:days])
 
@@ -811,6 +813,7 @@ module Kdeploy
     end
 
     def show_task_stats
+      show_kdeploy_banner
       stats = Kdeploy.statistics
       summary = stats.task_summary(days: options[:days])
 
@@ -823,6 +826,7 @@ module Kdeploy
     end
 
     def show_failure_stats
+      show_kdeploy_banner
       stats = Kdeploy.statistics
       failed_tasks = stats.top_failed_tasks(limit: 10, days: options[:days])
 
@@ -835,6 +839,7 @@ module Kdeploy
     end
 
     def show_trend_stats
+      show_kdeploy_banner
       stats = Kdeploy.statistics
       trends = stats.performance_trends(days: options[:days])
 
@@ -847,6 +852,7 @@ module Kdeploy
     end
 
     def show_global_stats
+      show_kdeploy_banner
       stats = Kdeploy.statistics
       global_summary = stats.global_summary
 
@@ -859,6 +865,7 @@ module Kdeploy
     end
 
     def clear_statistics
+      show_kdeploy_banner
       prompt = TTY::Prompt.new
       if prompt.yes?('Are you sure you want to clear all statistics? This cannot be undone.')
         Kdeploy.statistics.clear_statistics!
@@ -869,6 +876,7 @@ module Kdeploy
     end
 
     def export_statistics
+      show_kdeploy_banner
       export_file = options[:export] || "kdeploy_stats_#{Time.now.strftime('%Y%m%d_%H%M%S')}.json"
       format = File.extname(export_file) == '.csv' ? :csv : :json
 
