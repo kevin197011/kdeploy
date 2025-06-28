@@ -20,6 +20,7 @@ require_relative 'kdeploy/pipeline'
 require_relative 'kdeploy/dsl'
 require_relative 'kdeploy/runner'
 require_relative 'kdeploy/statistics'
+require_relative 'kdeploy/cli'
 
 module Kdeploy
   class Error < StandardError; end
