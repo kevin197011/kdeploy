@@ -127,7 +127,63 @@ module Kdeploy
 
     desc 'version', 'Show version'
     def version
-      puts "kdeploy version #{Kdeploy::VERSION}"
+      show_kdeploy_banner
+      puts ''
+      puts "🔖 Version: #{Kdeploy::VERSION}".colorize(:green)
+      puts '📅 Released: 2025'.colorize(:light_blue)
+      puts '🏠 Homepage: https://github.com/kdeploy/kdeploy'.colorize(:light_blue)
+      puts '📚 Documentation: https://github.com/kdeploy/kdeploy/wiki'.colorize(:light_blue)
+      puts ''
+    end
+
+    desc 'help [COMMAND]', 'Describe available commands or one specific command'
+    def help(command = nil)
+      show_kdeploy_banner
+      puts ''
+      puts '📖 Available Commands:'.colorize(:yellow)
+      puts ''
+
+      if command
+        # Show specific command help
+        super
+      else
+        # Show all commands with custom formatting
+        puts "  🚀 #{'deploy SCRIPT'.ljust(25)} Execute deployment script"
+        puts "  ⚡ #{'execute SCRIPT'.ljust(25)} Execute deployment script (alias for deploy)"
+        puts "  🔍 #{'validate SCRIPT'.ljust(25)} Validate deployment script without execution"
+        puts "  🆕 #{'init [PROJECT_NAME]'.ljust(25)} Initialize new deployment project"
+        puts "  ⚙️  #{'config'.ljust(25)} Show current configuration"
+        puts "  📊 #{'stats [COMMAND]'.ljust(25)} Show deployment statistics"
+        puts "  🔖 #{'version'.ljust(25)} Show version information"
+        puts "  ❓ #{'help [COMMAND]'.ljust(25)} Show this help or specific command help"
+        puts ''
+        puts '📈 Statistics Commands:'.colorize(:cyan)
+        puts "  #{'stats summary'.ljust(20)} Overview of all statistics"
+        puts "  #{'stats deployments'.ljust(20)} Deployment statistics"
+        puts "  #{'stats tasks'.ljust(20)} Task execution statistics"
+        puts "  #{'stats failures'.ljust(20)} Failed operations statistics"
+        puts "  #{'stats trends'.ljust(20)} Performance trends"
+        puts "  #{'stats global'.ljust(20)} Global statistics"
+        puts "  #{'stats clear'.ljust(20)} Clear all statistics"
+        puts "  #{'stats export'.ljust(20)} Export statistics to file"
+        puts ''
+        puts '🔧 Options:'.colorize(:magenta)
+        puts '  --config, -c FILE    Specify configuration file'
+        puts '  --inventory, -i FILE Specify inventory file'
+        puts '  --verbose, -v        Enable verbose logging'
+        puts '  --log-file FILE      Specify log file path'
+        puts '  --dry-run            Perform dry run without execution'
+        puts ''
+        puts '📚 Examples:'.colorize(:green)
+        puts '  kdeploy deploy app.rb'
+        puts '  kdeploy validate deploy.rb --dry-run'
+        puts '  kdeploy init my-project'
+        puts '  kdeploy stats summary --days 7'
+        puts '  kdeploy config'
+        puts ''
+        puts '💡 For more help: kdeploy help [COMMAND]'.colorize(:yellow)
+        puts ''
+      end
     end
 
     desc 'stats [COMMAND]', 'Show deployment statistics'
