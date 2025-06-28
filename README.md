@@ -854,7 +854,48 @@ kdeploy init myproject
 # 查看帮助
 kdeploy help
 kdeploy help deploy
+
+# 📊 统计功能 (新功能!)
+kdeploy stats summary                    # 查看统计概要
+kdeploy stats deployments               # 查看部署统计
+kdeploy stats tasks                     # 查看任务统计
+kdeploy stats failures                  # 查看失败统计
+kdeploy stats trends                    # 查看性能趋势
+kdeploy stats global                    # 查看全局统计
+kdeploy stats export --export stats.json  # 导出统计数据
+kdeploy stats clear                     # 清空统计数据
+
+# 统计命令选项
+kdeploy stats summary --days 7         # 查看最近7天的数据
+kdeploy stats tasks --format json      # JSON格式输出
 ```
+
+## 📈 统计功能
+
+Kdeploy 提供了强大的统计功能，自动跟踪所有部署、任务和命令的执行情况：
+
+**自动收集的统计信息**：
+- ✅ **成功/失败统计**: 自动记录部署、任务和命令的成功/失败状态
+- ⏱️ **执行时间统计**: 详细的性能数据和执行时间分析
+- 📊 **趋势分析**: 按日期分组的性能趋势
+- 🎯 **失败分析**: 失败最多的任务和错误模式识别
+
+**使用示例**：
+```bash
+# 查看最近30天的统计概要
+kdeploy stats summary
+
+# 查看详细的任务性能数据
+kdeploy stats tasks --days 7
+
+# 导出统计数据用于分析
+kdeploy stats export --export monthly_report.json
+
+# 查看性能趋势
+kdeploy stats trends --days 14
+```
+
+详细使用说明请参考 [STATISTICS.md](STATISTICS.md) 文档。
 
 ## 配置文件
 

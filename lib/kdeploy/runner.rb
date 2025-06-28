@@ -23,20 +23,39 @@ module Kdeploy
         result = @pipeline.execute
 
         duration = Time.now - start_time
-        log_final_results(result, duration)
 
-        result
+        # Enhanced result with pipeline info for statistics
+        enhanced_result = result.merge(
+          pipeline_name: @pipeline.name,
+          hosts_count: @pipeline.hosts.size
+        )
+
+        # Record deployment statistics
+        Kdeploy.statistics.record_deployment(enhanced_result)
+
+        log_final_results(enhanced_result, duration)
+
+        enhanced_result
       rescue StandardError => e
         duration = Time.now - start_time
         KdeployLogger.fatal("Deployment failed after #{duration.round(2)}s: #{e.message}")
         KdeployLogger.debug("Error backtrace: #{e.backtrace.join("\n")}")
 
-        {
+        failed_result = {
           success: false,
           error: e.message,
           duration: duration,
-          results: []
+          results: [],
+          pipeline_name: @pipeline.name,
+          hosts_count: @pipeline.hosts.size,
+          tasks_count: @pipeline.tasks.size,
+          success_count: 0
         }
+
+        # Record failed deployment statistics
+        Kdeploy.statistics.record_deployment(failed_result)
+
+        failed_result
       end
     end
 
@@ -101,11 +120,19 @@ module Kdeploy
       end
 
       # Log task details
-      result[:results].each do |task_result|
-        status = task_result[:success] ? '✅' : '❌'
-        success_info = "#{task_result[:success_count]}/#{task_result[:hosts_count]} hosts successful"
-        KdeployLogger.info("#{status} Task '#{task_result[:task_name]}': #{success_info}")
+      if result[:results] && result[:results].is_a?(Array)
+        result[:results].each do |task_result|
+          status = task_result[:success] ? '✅' : '❌'
+          success_info = "#{task_result[:success_count]}/#{task_result[:hosts_count]} hosts successful"
+          KdeployLogger.info("#{status} Task '#{task_result[:task_name]}': #{success_info}")
+        end
       end
+
+      # Log statistics summary
+      global_stats = Kdeploy.statistics.global_summary
+      KdeployLogger.info("📈 Global Stats: #{global_stats[:total_deployments]} deployments, " \
+                         "#{global_stats[:successful_deployments]} successful, " \
+                         "#{global_stats[:failed_deployments]} failed")
     end
 
     def generate_execution_plan

@@ -31,6 +31,9 @@ module Kdeploy
       duration = Time.now - start_time
       log_result(host, duration)
 
+      # Record command statistics
+      Kdeploy.statistics.record_command(@name, host.hostname, @result[:success], duration)
+
       @result[:success]
     rescue StandardError => e
       duration = Time.now - start_time
@@ -41,6 +44,10 @@ module Kdeploy
         exit_code: 1,
         success: false
       }
+
+      # Record failed command statistics
+      Kdeploy.statistics.record_command(@name, host.hostname, false, duration)
+
       false
     end
 

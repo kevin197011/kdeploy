@@ -57,13 +57,18 @@ module Kdeploy
 
       overall_success = @options[:fail_fast] ? results.values.all? { |r| r[:success] } : success_count.positive?
 
-      {
+      task_result = {
         success: overall_success,
         results: results,
         duration: duration,
         hosts_count: @hosts.size,
         success_count: success_count
       }
+
+      # Record task statistics
+      Kdeploy.statistics.record_task(@name, task_result)
+
+      task_result
     end
 
     private

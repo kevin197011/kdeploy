@@ -3,6 +3,15 @@
 require 'thor'
 require 'tty-prompt'
 
+# Add String truncate method if not available
+class String
+  def truncate(length)
+    return self if size <= length
+
+    "#{self[0, length - 3]}..."
+  end
+end
+
 module Kdeploy
   class CLI < Thor
     # Fix Thor deprecation warning
@@ -119,6 +128,35 @@ module Kdeploy
     desc 'version', 'Show version'
     def version
       puts "kdeploy version #{Kdeploy::VERSION}"
+    end
+
+    desc 'stats [COMMAND]', 'Show deployment statistics'
+    option :days, aliases: '-d', type: :numeric, default: 30, desc: 'Number of days to include in statistics'
+    option :format, aliases: '-f', default: 'table', desc: 'Output format (table, json, csv)'
+    option :export, aliases: '-e', desc: 'Export statistics to file'
+    def stats(command = 'summary')
+      case command.downcase
+      when 'summary', 'overview'
+        show_summary_stats
+      when 'deployments'
+        show_deployment_stats
+      when 'tasks'
+        show_task_stats
+      when 'failures', 'failed'
+        show_failure_stats
+      when 'trends'
+        show_trend_stats
+      when 'global'
+        show_global_stats
+      when 'clear'
+        clear_statistics
+      when 'export'
+        export_statistics
+      else
+        error "Unknown stats command: #{command}"
+        error 'Available commands: summary, deployments, tasks, failures, trends, global, clear, export'
+        exit 1
+      end
     end
 
     private
@@ -343,6 +381,270 @@ module Kdeploy
 
     def error(message)
       puts message.colorize(:red)
+    end
+
+    def show_summary_stats
+      stats = Kdeploy.statistics
+      deployment_summary = stats.deployment_summary(days: options[:days])
+      task_summary = stats.task_summary(days: options[:days])
+      global_summary = stats.global_summary
+
+      case options[:format].downcase
+      when 'json'
+        puts JSON.pretty_generate({
+                                    deployment_summary: deployment_summary,
+                                    task_summary: task_summary,
+                                    global_summary: global_summary
+                                  })
+      else
+        print_summary_table(deployment_summary, task_summary, global_summary)
+      end
+    end
+
+    def show_deployment_stats
+      stats = Kdeploy.statistics
+      summary = stats.deployment_summary(days: options[:days])
+
+      case options[:format].downcase
+      when 'json'
+        puts JSON.pretty_generate(summary)
+      else
+        print_deployment_table(summary)
+      end
+    end
+
+    def show_task_stats
+      stats = Kdeploy.statistics
+      summary = stats.task_summary(days: options[:days])
+
+      case options[:format].downcase
+      when 'json'
+        puts JSON.pretty_generate(summary)
+      else
+        print_task_table(summary)
+      end
+    end
+
+    def show_failure_stats
+      stats = Kdeploy.statistics
+      failed_tasks = stats.top_failed_tasks(limit: 10, days: options[:days])
+
+      case options[:format].downcase
+      when 'json'
+        puts JSON.pretty_generate(failed_tasks)
+      else
+        print_failure_table(failed_tasks)
+      end
+    end
+
+    def show_trend_stats
+      stats = Kdeploy.statistics
+      trends = stats.performance_trends(days: options[:days])
+
+      case options[:format].downcase
+      when 'json'
+        puts JSON.pretty_generate(trends)
+      else
+        print_trend_table(trends)
+      end
+    end
+
+    def show_global_stats
+      stats = Kdeploy.statistics
+      global_summary = stats.global_summary
+
+      case options[:format].downcase
+      when 'json'
+        puts JSON.pretty_generate(global_summary)
+      else
+        print_global_table(global_summary)
+      end
+    end
+
+    def clear_statistics
+      prompt = TTY::Prompt.new
+      if prompt.yes?('Are you sure you want to clear all statistics? This cannot be undone.')
+        Kdeploy.statistics.clear_statistics!
+        success 'Statistics cleared successfully'
+      else
+        info 'Statistics clearing cancelled'
+      end
+    end
+
+    def export_statistics
+      export_file = options[:export] || "kdeploy_stats_#{Time.now.strftime('%Y%m%d_%H%M%S')}.json"
+      format = File.extname(export_file) == '.csv' ? :csv : :json
+
+      Kdeploy.statistics.export_statistics(export_file, format: format)
+      success "Statistics exported to #{export_file}"
+    end
+
+    def print_summary_table(deployment_summary, task_summary, global_summary)
+      puts "\n📊 Kdeploy Statistics Summary (Last #{options[:days]} days)".colorize(:cyan)
+      puts '=' * 60
+
+      # Deployment Statistics
+      puts "\n📦 Deployment Statistics".colorize(:yellow)
+      if deployment_summary[:total_deployments] > 0
+        puts "  Total Deployments: #{deployment_summary[:total_deployments]}"
+        puts "  Successful: #{deployment_summary[:successful_deployments]} (#{deployment_summary[:success_rate]}%)"
+        puts "  Failed: #{deployment_summary[:failed_deployments]}"
+        puts "  Average Duration: #{deployment_summary[:avg_duration]}s"
+        puts "  Total Duration: #{format_duration(deployment_summary[:total_duration])}"
+      else
+        puts "  No deployments in the last #{options[:days]} days"
+      end
+
+      # Task Statistics
+      puts "\n🔧 Task Statistics".colorize(:yellow)
+      if task_summary[:total_task_executions] > 0
+        puts "  Total Task Executions: #{task_summary[:total_task_executions]}"
+        puts "  Unique Tasks: #{task_summary[:unique_tasks]}"
+
+        if task_summary[:tasks].any?
+          puts '  Top Tasks:'
+          task_summary[:tasks].first(5).each do |name, stats|
+            puts "    #{name}: #{stats[:total_executions]} executions (#{stats[:success_rate]}% success)"
+          end
+        end
+      else
+        puts "  No task executions in the last #{options[:days]} days"
+      end
+
+      # Global Statistics
+      puts "\n🌍 Global Statistics".colorize(:yellow)
+      puts "  Total Deployments: #{global_summary[:total_deployments]}"
+      puts "  Total Tasks: #{global_summary[:total_tasks]}"
+      puts "  Total Commands: #{global_summary[:total_commands]}"
+      puts "  Total Execution Time: #{format_duration(global_summary[:total_execution_time])}"
+      puts "  Session Duration: #{format_duration(global_summary[:session_duration])}"
+      puts ''
+    end
+
+    def print_deployment_table(summary)
+      puts "\n📦 Deployment Statistics (Last #{options[:days]} days)".colorize(:cyan)
+      puts '=' * 60
+
+      return puts 'No deployments found' if summary[:total_deployments] == 0
+
+      puts "Total Deployments: #{summary[:total_deployments]}"
+      puts "Successful: #{summary[:successful_deployments]} (#{summary[:success_rate]}%)"
+      puts "Failed: #{summary[:failed_deployments]}"
+      puts "Average Duration: #{summary[:avg_duration]}s"
+      puts "Min Duration: #{summary[:min_duration]}s"
+      puts "Max Duration: #{summary[:max_duration]}s"
+      puts "Total Duration: #{format_duration(summary[:total_duration])}"
+      puts ''
+    end
+
+    def print_task_table(summary)
+      puts "\n🔧 Task Statistics (Last #{options[:days]} days)".colorize(:cyan)
+      puts '=' * 60
+
+      return puts 'No task executions found' if summary[:total_task_executions] == 0
+
+      puts "Total Executions: #{summary[:total_task_executions]}"
+      puts "Unique Tasks: #{summary[:unique_tasks]}"
+      puts ''
+
+      if summary[:tasks].any?
+        puts 'Task Details:'
+        printf "%-30s %10s %10s %10s %12s %12s\n", 'Task Name', 'Executions', 'Success', 'Failed', 'Success Rate', 'Avg Duration'
+        puts '-' * 95
+
+        summary[:tasks].each do |name, stats|
+          printf "%-30s %10d %10d %10d %11.1f%% %11.2fs\n",
+                 name.truncate(28),
+                 stats[:total_executions],
+                 stats[:successful],
+                 stats[:failed],
+                 stats[:success_rate],
+                 stats[:avg_duration]
+        end
+      end
+      puts ''
+    end
+
+    def print_failure_table(failed_tasks)
+      puts "\n❌ Top Failed Tasks (Last #{options[:days]} days)".colorize(:red)
+      puts '=' * 60
+
+      return puts 'No failed tasks found' if failed_tasks.empty?
+
+      printf "%-30s %10s %20s\n", 'Task Name', 'Failures', 'Last Failure'
+      puts '-' * 62
+
+      failed_tasks.each do |task|
+        last_failure_time = Time.at(task[:last_failure][:timestamp]).strftime('%Y-%m-%d %H:%M:%S')
+        printf "%-30s %10d %20s\n",
+               task[:task_name].truncate(28),
+               task[:failure_count],
+               last_failure_time
+      end
+      puts ''
+    end
+
+    def print_trend_table(trends)
+      puts "\n📈 Performance Trends (Last #{options[:days]} days)".colorize(:cyan)
+      puts '=' * 80
+
+      return puts 'No trend data available' if trends[:trends].empty?
+
+      printf "%-12s %10s %10s %10s %12s %12s\n", 'Date', 'Total', 'Success', 'Failed', 'Success Rate', 'Avg Duration'
+      puts '-' * 78
+
+      trends[:trends].each do |date, stats|
+        printf "%-12s %10d %10d %10d %11.1f%% %11.2fs\n",
+               date,
+               stats[:total],
+               stats[:successful],
+               stats[:failed],
+               stats[:success_rate],
+               stats[:avg_duration]
+      end
+      puts ''
+    end
+
+    def print_global_table(global_summary)
+      puts "\n🌍 Global Statistics".colorize(:cyan)
+      puts '=' * 60
+
+      puts 'Deployments:'
+      puts "  Total: #{global_summary[:total_deployments]}"
+      puts "  Successful: #{global_summary[:successful_deployments]}"
+      puts "  Failed: #{global_summary[:failed_deployments]}"
+
+      puts "\nTasks:"
+      puts "  Total: #{global_summary[:total_tasks]}"
+      puts "  Successful: #{global_summary[:successful_tasks]}"
+      puts "  Failed: #{global_summary[:failed_tasks]}"
+
+      puts "\nCommands:"
+      puts "  Total: #{global_summary[:total_commands]}"
+      puts "  Successful: #{global_summary[:successful_commands]}"
+      puts "  Failed: #{global_summary[:failed_commands]}"
+
+      puts "\nExecution Time:"
+      puts "  Total: #{format_duration(global_summary[:total_execution_time])}"
+      puts "  Session: #{format_duration(global_summary[:session_duration])}"
+      puts "  Session Started: #{global_summary[:session_start_time].strftime('%Y-%m-%d %H:%M:%S')}"
+      puts ''
+    end
+
+    def format_duration(seconds)
+      return '0s' if seconds.nil? || seconds.zero?
+
+      if seconds < 60
+        "#{seconds.round(1)}s"
+      elsif seconds < 3600
+        minutes = (seconds / 60).to_i
+        remaining_seconds = (seconds % 60).to_i
+        "#{minutes}m #{remaining_seconds}s"
+      else
+        hours = (seconds / 3600).to_i
+        remaining_minutes = ((seconds % 3600) / 60).to_i
+        "#{hours}h #{remaining_minutes}m"
+      end
     end
 
     def create_sample_templates(project_name)

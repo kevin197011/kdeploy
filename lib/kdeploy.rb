@@ -19,6 +19,7 @@ require_relative 'kdeploy/task'
 require_relative 'kdeploy/pipeline'
 require_relative 'kdeploy/dsl'
 require_relative 'kdeploy/runner'
+require_relative 'kdeploy/statistics'
 
 module Kdeploy
   class Error < StandardError; end
@@ -28,6 +29,12 @@ module Kdeploy
 
   class << self
     attr_accessor :configuration
+    attr_reader :statistics
+
+    # Initialize statistics
+    def statistics
+      @statistics ||= Statistics.new
+    end
 
     # Configure kdeploy
     def configure
