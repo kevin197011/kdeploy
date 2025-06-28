@@ -229,8 +229,8 @@ module Kdeploy
       puts ''
       puts "🔖 Version: #{Kdeploy::VERSION}".colorize(:green)
       puts '📅 Released: 2025'.colorize(:light_blue)
-      puts '🏠 Homepage: https://github.com/kdeploy/kdeploy'.colorize(:light_blue)
-      puts '📚 Documentation: https://github.com/kdeploy/kdeploy/wiki'.colorize(:light_blue)
+      puts '🏠 Homepage: https://github.com/kevin197011/kdeploy'.colorize(:light_blue)
+      puts '📚 Documentation: https://github.com/kevin197011/kdeploy/wiki'.colorize(:light_blue)
       puts ''
     end
 
@@ -406,38 +406,222 @@ module Kdeploy
         # frozen_string_literal: true
 
         # Kdeploy deployment script for #{project_name}
+        #
+        # This script demonstrates how to use kdeploy for full deployment lifecycle
+        # including references to scripts in the scripts/ directory
+
+        # ===================================================================
+        # CONFIGURATION
+        # ===================================================================
 
         # Load hosts from inventory file
         inventory 'inventory.yml'
 
-        # Deploy application to web servers
+        # Optional: Set global variables (can also be set in inventory.yml)
+        set 'application', '#{project_name}'
+        set 'deploy_to', '/opt/#{project_name}'
+        set 'branch', 'main'
+
+        # ===================================================================
+        # DEPLOYMENT WORKFLOW
+        # ===================================================================
+
+        # Option 1: Complete deployment workflow using individual scripts
+        # Uncomment these to use the predefined scripts from scripts/ directory:
+
+        # Pre-deployment tasks (local)
+        local 'echo "🚀 Starting #{project_name} deployment..."'
+        local 'echo "Current user: $(whoami)"'
+        local 'echo "Current time: $(date)"'
+
+        # Step 1: Server setup (run once for new servers)
+        # Run with: kdeploy deploy scripts/setup.rb
+        # task 'run_setup' do
+        #   # This would execute the setup script
+        #   local 'kdeploy deploy scripts/setup.rb'
+        # end
+
+        # Step 2: Database operations
+        # Run with: kdeploy deploy scripts/database.rb
+        # task 'run_database_tasks' do
+        #   local 'kdeploy deploy scripts/database.rb'
+        # end
+
+        # ===================================================================
+        # MAIN DEPLOYMENT TASKS
+        # ===================================================================
+
+        # Main application deployment
         task 'deploy', on: :webservers do
-          run 'echo "Deploying application to {{hostname}}..."'
-          run 'cd {{deploy_to}} && git pull origin main'
-          run 'cd {{deploy_to}} && bundle install --deployment'
-          run 'sudo systemctl restart {{application}}'
+          run 'echo "Deploying #{project_name} to {{hostname}}..."'
+
+          # Create deployment directory
+          run 'sudo mkdir -p {{deploy_to}}'
+          run 'sudo chown {{user}}:{{user}} {{deploy_to}}'
+
+          # Deploy using heredoc for complex operations
+          run <<~DEPLOYMENT
+            echo "Starting deployment on {{hostname}}"
+            cd {{deploy_to}}
+
+            # Backup current version if exists
+            if [ -d ".git" ]; then
+              echo "Creating backup..."
+              git stash push -m "backup_$(date +%Y%m%d_%H%M%S)"
+            fi
+
+            # Get latest code
+            if [ -d ".git" ]; then
+              echo "Updating existing repository..."
+              git fetch origin
+              git reset --hard origin/{{branch}}
+            else
+              echo "Cloning repository..."
+              git clone https://github.com/example/#{project_name}.git .
+              git checkout {{branch}}
+            fi
+
+            # Install dependencies (adjust for your stack)
+            echo "Installing dependencies..."
+            # For Node.js: npm install --production
+            # For Ruby: bundle install --deployment
+            # For Python: pip install -r requirements.txt
+
+            # Build application if needed
+            # npm run build
+            # bundle exec rake assets:precompile
+
+            echo "✅ Deployment completed on {{hostname}}"
+          DEPLOYMENT
+
+          # Configure and restart services
+          run 'sudo systemctl restart {{application}}', ignore_errors: true
         end
 
-        # Setup database
-        task 'setup_db', on: :databases do
+        # Database setup (if needed)
+        task 'setup_database', on: :databases do
           run 'echo "Setting up database on {{hostname}}..."'
-          run 'sudo systemctl restart postgresql'
+
+          # Create database and user (PostgreSQL example)
+          run 'sudo -u postgres createdb {{application}}_{{environment}}', ignore_errors: true
+          run 'sudo -u postgres createuser {{application}}_user', ignore_errors: true
+
+          # Run migrations
+          run 'cd {{deploy_to}} && npm run migrate', ignore_errors: true
+
+          run 'echo "✅ Database setup completed on {{hostname}}"'
         end
 
-        # Health check on all web servers
+        # Health check
         task 'health_check', on: :webservers do
-          run 'curl -f http://localhost:{{app_port}}/health || exit 1',
-              name: 'health_check',
+          run 'echo "Running health checks on {{hostname}}..."'
+
+          # Check if service is running
+          run 'systemctl is-active {{application}} || echo "Service not running"', ignore_errors: true
+
+          # HTTP health check
+          run 'curl -f http://localhost:{{app_port}}/health || curl -f http://localhost:{{app_port}}/ || echo "HTTP check failed"',
+              name: 'http_health_check',
               timeout: 30,
-              retry_count: 3
+              retry_count: 3,
+              ignore_errors: true
+
+          run 'echo "✅ Health check completed on {{hostname}}"'
         end
 
-        # Backup database
-        task 'backup_db', on: :databases do
-          run 'pg_dump {{application}}_production > /tmp/{{application}}_backup_$(date +%Y%m%d).sql',
-              name: 'backup_database',
-              only: :database
+        # Backup before deployment (recommended for production)
+        task 'backup', on: :databases do
+          run 'echo "Creating backup on {{hostname}}..."'
+          run 'mkdir -p /backup/{{application}}'
+          run 'pg_dump {{application}}_{{environment}} > /backup/{{application}}/backup_$(date +%Y%m%d_%H%M%S).sql',
+              name: 'database_backup',
+              ignore_errors: true
+          run 'echo "✅ Backup completed on {{hostname}}"'
         end
+
+        # ===================================================================
+        # ADVANCED WORKFLOWS
+        # ===================================================================
+
+        # Complete deployment workflow
+        task 'full_deploy' do
+          run 'echo "🚀 Starting full deployment workflow..."'
+
+          # This demonstrates how you might chain operations
+          # In practice, you'd run these as separate kdeploy commands
+          local 'echo "Step 1: Pre-deployment checks"'
+          local 'echo "Step 2: Backup (use: kdeploy deploy scripts/backup.rb)"'
+          local 'echo "Step 3: Deploy application (this script)"'
+          local 'echo "Step 4: Health monitoring (use: kdeploy deploy scripts/monitoring.rb)"'
+
+          run 'echo "✅ Full deployment workflow guide completed"'
+        end
+
+        # Rollback task (for emergencies)
+        task 'rollback', on: :webservers do
+          run 'echo "🔄 Rolling back on {{hostname}}..."'
+
+          run <<~ROLLBACK
+            cd {{deploy_to}}
+            echo "Current commit: $(git rev-parse HEAD)"
+            echo "Rolling back to previous commit..."
+            git reset --hard HEAD~1
+
+            # Restart services
+            sudo systemctl restart {{application}}
+
+            echo "✅ Rollback completed on {{hostname}}"
+          ROLLBACK
+        end
+
+        # Maintenance mode
+        task 'maintenance_on', on: :webservers do
+          run 'echo "Enabling maintenance mode on {{hostname}}..."'
+          run 'echo "maintenance" > {{deploy_to}}/public/maintenance.txt', ignore_errors: true
+          run 'sudo nginx -s reload', ignore_errors: true
+        end
+
+        task 'maintenance_off', on: :webservers do
+          run 'echo "Disabling maintenance mode on {{hostname}}..."'
+          run 'rm -f {{deploy_to}}/public/maintenance.txt', ignore_errors: true
+          run 'sudo nginx -s reload', ignore_errors: true
+        end
+
+        # ===================================================================
+        # POST-DEPLOYMENT
+        # ===================================================================
+
+        # Final success message
+        local 'echo "🎉 #{project_name} deployment script completed!"'
+        local 'echo ""'
+        local 'echo "💡 Next steps:"'
+        local 'echo "   1. Run health checks: kdeploy deploy scripts/monitoring.rb"'
+        local 'echo "   2. Monitor logs and performance"'
+        local 'echo "   3. Create backups: kdeploy deploy scripts/backup.rb"'
+        local 'echo ""'
+        local 'echo "📊 View deployment statistics: kdeploy stats summary"'
+
+        # ===================================================================
+        # USAGE EXAMPLES:
+        # ===================================================================
+        #
+        # Complete deployment workflow:
+        # 1. kdeploy deploy scripts/setup.rb      # One-time server setup
+        # 2. kdeploy deploy scripts/database.rb   # Database operations
+        # 3. kdeploy deploy deploy.rb             # Main deployment (this file)
+        # 4. kdeploy deploy scripts/monitoring.rb # Health checks
+        # 5. kdeploy deploy scripts/backup.rb     # Create backups
+        #
+        # Individual tasks:
+        # kdeploy deploy deploy.rb --task deploy         # Deploy only
+        # kdeploy deploy deploy.rb --task health_check   # Health check only
+        # kdeploy deploy deploy.rb --task rollback       # Emergency rollback
+        #
+        # Maintenance:
+        # kdeploy deploy deploy.rb --task maintenance_on  # Enable maintenance
+        # kdeploy deploy deploy.rb --task maintenance_off # Disable maintenance
+        #
+        # For more examples, see scripts/ directory files.
       RUBY
 
       File.write("#{project_name}/deploy.rb", deploy_script)
@@ -845,7 +1029,7 @@ module Kdeploy
         task 'setup_user', on: :all do
           run 'sudo useradd -m -s /bin/bash {{user}}',
               name: 'create_user',
-              allow_failure: true
+              ignore_errors: true
           run 'sudo mkdir -p /home/{{user}}/.ssh'
           run 'sudo cp ~/.ssh/authorized_keys /home/{{user}}/.ssh/'
           run 'sudo chown -R {{user}}:{{user}} /home/{{user}}/.ssh'
@@ -891,10 +1075,10 @@ module Kdeploy
         task 'create_database', on: :databases do
           run 'sudo -u postgres createdb {{application}}_{{environment}}',
               name: 'create_db',
-              allow_failure: true
+              ignore_errors: true
           run 'sudo -u postgres createuser {{application}}_user',
               name: 'create_user',
-              allow_failure: true
+              ignore_errors: true
           run %(sudo -u postgres psql -c "ALTER USER {{application}}_user WITH PASSWORD 'secure_password';")
           run %(sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{application}}_{{environment}} TO {{application}}_user;")
         end
@@ -948,7 +1132,7 @@ module Kdeploy
           # Backup configuration files
           run 'sudo tar -czf /backup/{{application}}/{{hostname}}/config_$(date +%Y%m%d_%H%M%S).tar.gz /etc/nginx /etc/systemd/system/{{application}}.service',
               name: 'backup_config',
-              allow_failure: true
+              ignore_errors: true
         end
 
         # Database backup
@@ -991,25 +1175,25 @@ module Kdeploy
 
         # Application health check
         task 'app_health', on: :webservers do
-          run 'systemctl status {{application}}', allow_failure: true
+          run 'systemctl status {{application}}', ignore_errors: true
           run 'curl -f http://localhost:{{app_port}}/health || echo "Health check endpoint not responding"',
               timeout: 10,
-              allow_failure: true
+              ignore_errors: true
         end
 
         # Service status check
         task 'service_status', on: :all do
-          run 'systemctl status nginx', allow_failure: true
-          run 'systemctl status postgresql', allow_failure: true, only: :databases
-          run 'systemctl status redis', allow_failure: true
+          run 'systemctl status nginx', ignore_errors: true
+          run 'systemctl status postgresql', ignore_errors: true, only: :databases
+          run 'systemctl status redis', ignore_errors: true
         end
 
         # Log analysis
         task 'check_logs', on: :webservers do
           run 'echo "=== Recent Application Logs ==="'
-          run 'tail -n 20 {{deploy_to}}/shared/logs/application.log', allow_failure: true
+          run 'tail -n 20 {{deploy_to}}/shared/logs/application.log', ignore_errors: true
           run 'echo "=== Recent Nginx Error Logs ==="'
-          run 'sudo tail -n 20 /var/log/nginx/{{application}}_error.log', allow_failure: true
+          run 'sudo tail -n 20 /var/log/nginx/{{application}}_error.log', ignore_errors: true
         end
 
         # Performance monitoring
@@ -1017,7 +1201,7 @@ module Kdeploy
           run 'echo "=== Performance Metrics ==="'
           run 'curl -w "Connect: %<time_connect>ss, Total: %<time_total>ss, Size: %<size_download>s bytes\\n" -s -o /dev/null http://localhost:{{app_port}}/',
               timeout: 15,
-              allow_failure: true
+              ignore_errors: true
         end
 
         # Security check
@@ -1025,7 +1209,7 @@ module Kdeploy
           run 'echo "=== Security Status ==="'
           run 'sudo ufw status'
           run 'last -n 10'
-          run 'sudo fail2ban-client status', allow_failure: true
+          run 'sudo fail2ban-client status', ignore_errors: true
         end
       RUBY
 
@@ -1046,7 +1230,7 @@ module Kdeploy
           run 'cd {{deploy_to}} && git reset --hard HEAD~1',
               name: 'rollback_code'
           run 'cd {{deploy_to}} && npm install --production',
-              allow_failure: true
+              ignore_errors: true
           run 'sudo systemctl restart {{application}}'
         end
 
@@ -1098,22 +1282,22 @@ module Kdeploy
 
         # Clean application logs
         task 'clean_logs', on: :all do
-          run 'sudo find /var/log -name "*.log" -mtime +30 -delete', allow_failure: true
-          run 'find {{deploy_to}}/shared/logs -name "*.log" -mtime +7 -delete', allow_failure: true
-          run 'sudo systemctl reload rsyslog', allow_failure: true
+          run 'sudo find /var/log -name "*.log" -mtime +30 -delete', ignore_errors: true
+          run 'find {{deploy_to}}/shared/logs -name "*.log" -mtime +7 -delete', ignore_errors: true
+          run 'sudo systemctl reload rsyslog', ignore_errors: true
         end
 
         # Clean temporary files
         task 'clean_temp', on: :all do
-          run 'find /tmp -type f -mtime +7 -delete', allow_failure: true
-          run 'find {{deploy_to}}/shared/tmp -type f -mtime +1 -delete', allow_failure: true
+          run 'find /tmp -type f -mtime +7 -delete', ignore_errors: true
+          run 'find {{deploy_to}}/shared/tmp -type f -mtime +1 -delete', ignore_errors: true
         end
 
         # Clean package cache
         task 'clean_cache', on: :all do
           run 'sudo apt-get autoremove -y'
           run 'sudo apt-get autoclean'
-          run 'npm cache clean --force', allow_failure: true
+          run 'npm cache clean --force', ignore_errors: true
         end
 
         # Restart services
@@ -1125,9 +1309,9 @@ module Kdeploy
 
         # Full cleanup (use with caution)
         task 'deep_clean', on: :all do
-          run 'docker system prune -af', allow_failure: true
+          run 'docker system prune -af', ignore_errors: true
           run 'sudo journalctl --vacuum-time=7d'
-          run 'sudo find /var/cache -type f -delete', allow_failure: true
+          run 'sudo find /var/cache -type f -delete', ignore_errors: true
         end
       RUBY
 

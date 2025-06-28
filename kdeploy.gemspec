@@ -15,14 +15,14 @@ Gem::Specification.new do |spec|
     parallel execution, SSH-based remote operations, heredoc syntax for multi-line scripts,
     and ERB templates for dynamic configuration generation.
   DESC
-  spec.homepage = 'https://github.com/kdeploy/kdeploy'
+  spec.homepage = 'https://github.com/kevin197011/kdeploy'
   spec.license = 'MIT'
   spec.required_ruby_version = '>= 3.0.0'
 
   spec.metadata['allowed_push_host'] = 'https://rubygems.org'
   spec.metadata['homepage_uri'] = spec.homepage
-  spec.metadata['source_code_uri'] = 'https://github.com/kdeploy/kdeploy'
-  spec.metadata['changelog_uri'] = 'https://github.com/kdeploy/kdeploy/blob/main/CHANGELOG.md'
+  spec.metadata['source_code_uri'] = 'https://github.com/kevin197011/kdeploy'
+  spec.metadata['changelog_uri'] = 'https://github.com/kevin197011/kdeploy/blob/main/CHANGELOG.md'
   spec.metadata['rubygems_mfa_required'] = 'true'
 
   # Specify which files should be added to the gem when it is released.

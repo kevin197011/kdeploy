@@ -40,6 +40,6 @@ end
 
 # Install gem locally
 task :install do
-  system 'gem build ./kdeploy.gemspec'
-  system "gem install ./kdeploy-#{Kdeploy::VERSION}.gem"
+  system 'gem build kdeploy.gemspec'
+  system "gem install kdeploy-#{Kdeploy::VERSION}.gem"
 end
