@@ -78,19 +78,36 @@ module Kdeploy
       puts '📁 Project Structure Created:'.colorize(:cyan)
       puts "  #{project_name}/".colorize(:light_blue)
       puts '  ├── deploy.rb           # Main deployment script'.colorize(:light_blue)
+      puts '  ├── inventory.yml       # Server inventory'.colorize(:light_blue)
       puts '  ├── config/             # Configuration files'.colorize(:light_blue)
-      puts '  │   └── deploy.yml      # Deployment configuration'.colorize(:light_blue)
+      puts '  │   └── kdeploy.yml     # Deployment configuration'.colorize(:light_blue)
       puts '  ├── scripts/            # Additional scripts'.colorize(:light_blue)
-      puts '  │   └── setup.rb        # Server setup script'.colorize(:light_blue)
+      puts '  │   ├── setup.rb        # Server setup script'.colorize(:light_blue)
+      puts '  │   ├── database.rb     # Database management'.colorize(:light_blue)
+      puts '  │   ├── backup.rb       # Backup operations'.colorize(:light_blue)
+      puts '  │   ├── monitoring.rb   # Health checks & monitoring'.colorize(:light_blue)
+      puts '  │   ├── rollback.rb     # Rollback operations'.colorize(:light_blue)
+      puts '  │   └── cleanup.rb      # Cleanup operations'.colorize(:light_blue)
       puts '  └── templates/          # Configuration templates'.colorize(:light_blue)
       puts '      ├── nginx.conf.erb  # Nginx configuration'.colorize(:light_blue)
-      puts '      └── app.service.erb # Systemd service'.colorize(:light_blue)
+      puts '      ├── app.service.erb # Systemd service'.colorize(:light_blue)
+      puts '      ├── deploy.sh.erb   # Deployment script'.colorize(:light_blue)
+      puts '      └── backup.sh.erb   # Backup script'.colorize(:light_blue)
       puts ''
       puts '🚀 Next Steps:'.colorize(:cyan)
       puts "  1. cd #{project_name}".colorize(:light_blue)
       puts '  2. Edit deploy.rb to configure your deployment'.colorize(:light_blue)
-      puts '  3. Add your servers to config/deploy.yml'.colorize(:light_blue)
-      puts '  4. Run: kdeploy deploy deploy.rb'.colorize(:light_blue)
+      puts '  3. Update inventory.yml with your servers'.colorize(:light_blue)
+      puts '  4. Run: kdeploy deploy scripts/setup.rb        # Setup servers'.colorize(:light_blue)
+      puts '  5. Run: kdeploy deploy deploy.rb               # Deploy application'.colorize(:light_blue)
+      puts ''
+      puts '💡 Available Scripts:'.colorize(:cyan)
+      puts '  kdeploy deploy scripts/setup.rb      # Initial server setup'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/database.rb   # Database operations'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/backup.rb     # Backup operations'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/monitoring.rb # Health checks'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/rollback.rb   # Rollback operations'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/cleanup.rb    # Cleanup operations'.colorize(:light_blue)
       puts ''
       puts '💡 Need help? Run: kdeploy help deploy'.colorize(:yellow)
       puts ''
@@ -523,6 +540,9 @@ module Kdeploy
       File.write("#{project_name}/inventory.yml", inventory_content)
       info "Created inventory: #{project_name}/inventory.yml"
 
+      # Create sample scripts
+      create_sample_scripts(project_name)
+
       # Create sample template files
       create_sample_templates(project_name)
     end
@@ -801,6 +821,318 @@ module Kdeploy
         remaining_minutes = ((seconds % 3600) / 60).to_i
         "#{hours}h #{remaining_minutes}m"
       end
+    end
+
+    def create_sample_scripts(project_name)
+      # Create server setup script
+      setup_script = <<~RUBY
+        # frozen_string_literal: true
+
+        # Server setup script for #{project_name}
+        # Run this script to prepare servers for deployment
+
+        # Load inventory
+        inventory 'inventory.yml'
+
+        # Install system dependencies
+        task 'install_dependencies', on: :all do
+          run 'sudo apt-get update'
+          run 'sudo apt-get install -y curl git build-essential'
+          run 'sudo apt-get install -y nginx postgresql redis-server'
+        end
+
+        # Setup application user
+        task 'setup_user', on: :all do
+          run 'sudo useradd -m -s /bin/bash {{user}}',
+              name: 'create_user',
+              allow_failure: true
+          run 'sudo mkdir -p /home/{{user}}/.ssh'
+          run 'sudo cp ~/.ssh/authorized_keys /home/{{user}}/.ssh/'
+          run 'sudo chown -R {{user}}:{{user}} /home/{{user}}/.ssh'
+          run 'sudo chmod 700 /home/{{user}}/.ssh'
+          run 'sudo chmod 600 /home/{{user}}/.ssh/authorized_keys'
+        end
+
+        # Setup application directory
+        task 'setup_app_directory', on: :webservers do
+          run 'sudo mkdir -p {{deploy_to}}'
+          run 'sudo chown {{user}}:{{user}} {{deploy_to}}'
+          run 'sudo mkdir -p {{deploy_to}}/shared/logs'
+          run 'sudo mkdir -p {{deploy_to}}/shared/tmp'
+        end
+
+        # Configure firewall
+        task 'setup_firewall', on: :all do
+          run 'sudo ufw allow ssh'
+          run 'sudo ufw allow {{nginx_port || 80}}'
+          run 'sudo ufw --force enable', name: 'enable_firewall'
+        end
+
+        # Install Node.js (example for Node.js applications)
+        task 'install_nodejs', on: :webservers do
+          run 'curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -'
+          run 'sudo apt-get install -y nodejs'
+          run 'node --version && npm --version'
+        end
+      RUBY
+
+      File.write("#{project_name}/scripts/setup.rb", setup_script)
+      info "Created script: #{project_name}/scripts/setup.rb"
+
+      # Create database management script
+      database_script = <<~RUBY
+        # frozen_string_literal: true
+
+        # Database management script for #{project_name}
+
+        inventory 'inventory.yml'
+
+        # Create database and user
+        task 'create_database', on: :databases do
+          run 'sudo -u postgres createdb {{application}}_{{environment}}',
+              name: 'create_db',
+              allow_failure: true
+          run 'sudo -u postgres createuser {{application}}_user',
+              name: 'create_user',
+              allow_failure: true
+          run %(sudo -u postgres psql -c "ALTER USER {{application}}_user WITH PASSWORD 'secure_password';")
+          run %(sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE {{application}}_{{environment}} TO {{application}}_user;")
+        end
+
+        # Run database migrations
+        task 'migrate', on: :databases do
+          run 'cd {{deploy_to}} && npm run migrate'
+        end
+
+        # Database backup
+        task 'backup', on: :databases do
+          run 'mkdir -p /backup/{{application}}'
+          run 'pg_dump {{application}}_{{environment}} > /backup/{{application}}/backup_$(date +%Y%m%d_%H%M%S).sql'
+          run 'gzip /backup/{{application}}/backup_*.sql'
+        end
+
+        # Database restore (use with caution!)
+        task 'restore', on: :databases do |hosts, backup_file|
+          backup_file ||= ENV['BACKUP_FILE']
+          raise 'Please specify BACKUP_FILE environment variable' unless backup_file
+
+          run "gunzip -c \#{backup_file} | psql {{application}}_{{environment}}"
+        end
+
+        # Database maintenance
+        task 'maintenance', on: :databases do
+          run %(sudo -u postgres psql {{application}}_{{environment}} -c "VACUUM ANALYZE;")
+          run %(sudo -u postgres psql {{application}}_{{environment}} -c "REINDEX DATABASE {{application}}_{{environment}};")
+        end
+      RUBY
+
+      File.write("#{project_name}/scripts/database.rb", database_script)
+      info "Created script: #{project_name}/scripts/database.rb"
+
+      # Create backup script
+      backup_script = <<~RUBY
+        # frozen_string_literal: true
+
+        # Backup script for #{project_name}
+
+        inventory 'inventory.yml'
+
+        # Full application backup
+        task 'backup_application', on: :all do
+          run 'mkdir -p /backup/{{application}}/{{hostname}}'
+
+          # Backup application files
+          run 'tar -czf /backup/{{application}}/{{hostname}}/app_$(date +%Y%m%d_%H%M%S).tar.gz -C {{deploy_to}} .',
+              name: 'backup_app_files'
+
+          # Backup configuration files
+          run 'sudo tar -czf /backup/{{application}}/{{hostname}}/config_$(date +%Y%m%d_%H%M%S).tar.gz /etc/nginx /etc/systemd/system/{{application}}.service',
+              name: 'backup_config',
+              allow_failure: true
+        end
+
+        # Database backup
+        task 'backup_database', on: :databases do
+          run 'mkdir -p /backup/{{application}}/database'
+          run 'pg_dump {{application}}_{{environment}} | gzip > /backup/{{application}}/database/{{application}}_$(date +%Y%m%d_%H%M%S).sql.gz'
+        end
+
+        # Cleanup old backups
+        task 'cleanup_backups', on: :all do
+          run 'find /backup/{{application}} -name "*.tar.gz" -mtime +30 -delete'
+          run 'find /backup/{{application}} -name "*.sql.gz" -mtime +30 -delete'
+        end
+
+        # Download backups to local machine
+        task 'download_backups', on: :all do
+          run 'ls -la /backup/{{application}}/{{hostname}}/'
+        end
+      RUBY
+
+      File.write("#{project_name}/scripts/backup.rb", backup_script)
+      info "Created script: #{project_name}/scripts/backup.rb"
+
+      # Create monitoring script
+      monitoring_script = <<~RUBY
+        # frozen_string_literal: true
+
+        # Monitoring and health check script for #{project_name}
+
+        inventory 'inventory.yml'
+
+        # System health check
+        task 'system_health', on: :all do
+          run 'echo "=== System Health for {{hostname}} ==="'
+          run 'uptime'
+          run 'df -h'
+          run 'free -h'
+          run 'ps aux --sort=-%cpu | head -10'
+        end
+
+        # Application health check
+        task 'app_health', on: :webservers do
+          run 'systemctl status {{application}}', allow_failure: true
+          run 'curl -f http://localhost:{{app_port}}/health || echo "Health check endpoint not responding"',
+              timeout: 10,
+              allow_failure: true
+        end
+
+        # Service status check
+        task 'service_status', on: :all do
+          run 'systemctl status nginx', allow_failure: true
+          run 'systemctl status postgresql', allow_failure: true, only: :databases
+          run 'systemctl status redis', allow_failure: true
+        end
+
+        # Log analysis
+        task 'check_logs', on: :webservers do
+          run 'echo "=== Recent Application Logs ==="'
+          run 'tail -n 20 {{deploy_to}}/shared/logs/application.log', allow_failure: true
+          run 'echo "=== Recent Nginx Error Logs ==="'
+          run 'sudo tail -n 20 /var/log/nginx/{{application}}_error.log', allow_failure: true
+        end
+
+        # Performance monitoring
+        task 'performance_check', on: :webservers do
+          run 'echo "=== Performance Metrics ==="'
+          run 'curl -w "Connect: %<time_connect>ss, Total: %<time_total>ss, Size: %<size_download>s bytes\\n" -s -o /dev/null http://localhost:{{app_port}}/',
+              timeout: 15,
+              allow_failure: true
+        end
+
+        # Security check
+        task 'security_check', on: :all do
+          run 'echo "=== Security Status ==="'
+          run 'sudo ufw status'
+          run 'last -n 10'
+          run 'sudo fail2ban-client status', allow_failure: true
+        end
+      RUBY
+
+      File.write("#{project_name}/scripts/monitoring.rb", monitoring_script)
+      info "Created script: #{project_name}/scripts/monitoring.rb"
+
+      # Create rollback script
+      rollback_script = <<~RUBY
+        # frozen_string_literal: true
+
+        # Rollback script for #{project_name}
+
+        inventory 'inventory.yml'
+
+        # Quick rollback to previous version
+        task 'rollback', on: :webservers do
+          run 'cd {{deploy_to}} && git log --oneline -5'
+          run 'cd {{deploy_to}} && git reset --hard HEAD~1',
+              name: 'rollback_code'
+          run 'cd {{deploy_to}} && npm install --production',
+              allow_failure: true
+          run 'sudo systemctl restart {{application}}'
+        end
+
+        # Rollback to specific commit
+        task 'rollback_to_commit', on: :webservers do |hosts, commit_hash|
+          commit_hash ||= ENV['COMMIT_HASH']
+          raise 'Please specify COMMIT_HASH environment variable' unless commit_hash
+
+          run "cd {{deploy_to}} && git reset --hard \#{commit_hash}"
+          run 'cd {{deploy_to}} && npm install --production'
+          run 'sudo systemctl restart {{application}}'
+        end
+
+        # Emergency stop
+        task 'emergency_stop', on: :webservers do
+          run 'sudo systemctl stop {{application}}'
+          run 'sudo systemctl disable {{application}}'
+        end
+
+        # Emergency start
+        task 'emergency_start', on: :webservers do
+          run 'sudo systemctl enable {{application}}'
+          run 'sudo systemctl start {{application}}'
+          run 'sleep 5 && systemctl status {{application}}'
+        end
+
+        # Maintenance mode
+        task 'maintenance_on', on: :webservers do
+          run 'echo "maintenance" > {{deploy_to}}/public/maintenance.txt'
+          run 'sudo nginx -s reload'
+        end
+
+        task 'maintenance_off', on: :webservers do
+          run 'rm -f {{deploy_to}}/public/maintenance.txt'
+          run 'sudo nginx -s reload'
+        end
+      RUBY
+
+      File.write("#{project_name}/scripts/rollback.rb", rollback_script)
+      info "Created script: #{project_name}/scripts/rollback.rb"
+
+      # Create cleanup script
+      cleanup_script = <<~RUBY
+        # frozen_string_literal: true
+
+        # Cleanup script for #{project_name}
+
+        inventory 'inventory.yml'
+
+        # Clean application logs
+        task 'clean_logs', on: :all do
+          run 'sudo find /var/log -name "*.log" -mtime +30 -delete', allow_failure: true
+          run 'find {{deploy_to}}/shared/logs -name "*.log" -mtime +7 -delete', allow_failure: true
+          run 'sudo systemctl reload rsyslog', allow_failure: true
+        end
+
+        # Clean temporary files
+        task 'clean_temp', on: :all do
+          run 'find /tmp -type f -mtime +7 -delete', allow_failure: true
+          run 'find {{deploy_to}}/shared/tmp -type f -mtime +1 -delete', allow_failure: true
+        end
+
+        # Clean package cache
+        task 'clean_cache', on: :all do
+          run 'sudo apt-get autoremove -y'
+          run 'sudo apt-get autoclean'
+          run 'npm cache clean --force', allow_failure: true
+        end
+
+        # Restart services
+        task 'restart_services', on: :all do
+          run 'sudo systemctl restart nginx'
+          run 'sudo systemctl restart {{application}}', only: :webservers
+          run 'sudo systemctl restart postgresql', only: :databases
+        end
+
+        # Full cleanup (use with caution)
+        task 'deep_clean', on: :all do
+          run 'docker system prune -af', allow_failure: true
+          run 'sudo journalctl --vacuum-time=7d'
+          run 'sudo find /var/cache -type f -delete', allow_failure: true
+        end
+      RUBY
+
+      File.write("#{project_name}/scripts/cleanup.rb", cleanup_script)
+      info "Created script: #{project_name}/scripts/cleanup.rb"
     end
 
     def create_sample_templates(project_name)
