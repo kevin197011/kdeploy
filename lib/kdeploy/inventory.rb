@@ -6,58 +6,55 @@ module Kdeploy
 
     def initialize(inventory_file)
       @data = YAML.load_file(inventory_file)
+      @hosts = {}
       @groups = {}
-      @vars = @data['vars'] || @data[:vars] || {}
-
-      parse_groups(@data)
-
-      KdeployLogger.info("Loaded #{all_hosts.size} hosts from inventory: #{inventory_file}")
+      @vars = {}
+      parse_inventory(@data)
     end
 
-    # Load inventory from YAML file
+    # Load inventory from file
     # @param inventory_file [String] Path to inventory file
     def load_from_file(inventory_file)
       inventory_data = YAML.load_file(inventory_file)
-
       parse_inventory(inventory_data)
-    rescue Psych::SyntaxError => e
-      raise ConfigurationError, "Invalid YAML syntax in inventory file: #{e.message}"
-    rescue StandardError => e
-      raise ConfigurationError, "Failed to load inventory file: #{e.message}"
     end
 
-    # Get all hosts in a group
+    # Get hosts in group
     # @param group_name [String, Symbol] Group name
-    # @return [Array<Host>] Hosts in the group
+    # @return [Array<Host>] Hosts in group
     def hosts_in_group(group_name)
       group_name = group_name.to_s
       return [] unless @groups[group_name]
 
-      @groups[group_name][:hosts].map { |hostname| @hosts[hostname] }.compact
+      @groups[group_name][:hosts]
     end
 
-    # Get all hosts with specific role
+    # Get hosts with role
     # @param role [String, Symbol] Role name
-    # @return [Array<Host>] Hosts with the role
+    # @return [Array<Host>] Hosts with role
     def hosts_with_role(role)
       @hosts.values.select { |host| host.has_role?(role) }
     end
 
-    # Get all hosts from all groups
+    # Get all hosts
     # @return [Array<Host>] All hosts
     def all_hosts
       hosts = Set.new
-      @groups.each_value do |group|
-        group[:hosts].each do |host|
-          hosts.add(host)
-        end
+
+      # Add hosts from groups
+      @groups.each do |_group_name, group_config|
+        hosts.merge(group_config[:hosts])
       end
+
+      # Add individual hosts
+      hosts.merge(@hosts.values)
+
       hosts.to_a
     end
 
     # Get host by hostname
     # @param hostname [String] Hostname
-    # @return [Host, nil] Host object or nil
+    # @return [Host] Host object
     def host(hostname)
       @hosts[hostname]
     end
@@ -131,20 +128,24 @@ module Kdeploy
             hostname = host_config['hostname'] || host_config[:hostname]
             next unless hostname
 
-            # Create host object
+            # Create host object with global variables
             host = Host.new(
               hostname,
-              user: host_config['user'] || host_config[:user],
+              user: host_config['user'] || host_config[:user] || @vars['user'] || @vars[:user],
               port: host_config['port'] || host_config[:port],
               roles: Array(host_config['roles'] || host_config[:roles] || [group_name]),
-              vars: host_config['vars'] || host_config[:vars] || {},
+              vars: @vars.merge(host_config['vars'] || host_config[:vars] || {}),
               ssh_options: host_config['ssh'] || host_config[:ssh] || {}
             )
 
             # Add host to group
           else
-            # Simple hostname string
-            host = Host.new(host_config, roles: [group_name])
+            # Simple hostname string with global variables
+            host = Host.new(
+              host_config,
+              roles: [group_name],
+              vars: @vars
+            )
           end
           @groups[group_name][:hosts] << host
         end
@@ -166,14 +167,14 @@ module Kdeploy
         host_groups = find_host_groups(hostname)
         host_roles = Array(host_config['roles'] || host_config[:roles] || host_groups)
 
-        # Create host object
+        # Create host object with global variables
         @hosts[hostname] = Host.new(
           hostname,
-          user: host_config['user'] || host_config[:user],
+          user: host_config['user'] || host_config[:user] || @vars['user'] || @vars[:user],
           port: host_config['port'] || host_config[:port],
           ssh_options: parse_ssh_options(host_config),
           roles: host_roles,
-          vars: host_config['vars'] || host_config[:vars] || {}
+          vars: @vars.merge(host_config['vars'] || host_config[:vars] || {})
         )
       end
     end

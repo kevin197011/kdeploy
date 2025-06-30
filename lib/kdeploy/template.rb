@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require 'erb'
-require 'fileutils'
-
 module Kdeploy
   # ERB template management class
   class Template

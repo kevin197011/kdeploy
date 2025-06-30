@@ -1,0 +1,133 @@
+# frozen_string_literal: true
+
+# 加载配置文件
+load 'config/kdeploy.yml'
+
+# 加载主机清单
+inventory 'inventory.yml'
+
+# 设置模板目录
+template_dir 'templates'
+
+# 导入公共任务
+import 'common_tasks'
+
+# 设置日志级别
+set 'log_level', 'info'
+
+# 本地命令
+local 'echo "=== Starting deployment ==="'
+
+# 系统健康检查
+task 'system_health', on: :all do
+  run 'echo "=== System Health Check ==="'
+  run 'uptime'
+  run 'df -h'
+  run 'free -h'
+  run 'ps aux --sort=-%cpu | head -10'
+end
+
+# 准备目录
+task 'prepare', on: :app do
+  run 'mkdir -p {{deploy_to}}', ignore_errors: true
+  run 'chown -R {{user}}:{{user}} {{deploy_to}}', ignore_errors: true
+end
+
+# 配置 Nginx
+task 'setup_nginx', on: :web do
+  run 'apt-get update && apt-get install -y nginx', ignore_errors: true
+  upload_template 'nginx.conf.erb', '/etc/nginx/conf.d/{{application}}.conf'
+  run 'nginx -t'
+  run 'systemctl enable nginx'
+  run 'systemctl reload nginx'
+end
+
+# 配置应用服务
+task 'setup_service', on: :app do
+  upload_template 'app.service.erb', '/etc/systemd/system/{{application}}.service'
+  run 'systemctl daemon-reload'
+  run 'systemctl enable {{application}}'
+  run 'systemctl restart {{application}}'
+end
+
+# 数据库迁移
+task 'migrate', on: :db do
+  run 'cd {{deploy_to}} && rake db:migrate RAILS_ENV={{environment}}'
+end
+
+# 数据库备份
+task 'backup', on: :db do
+  run 'mkdir -p {{backup_path}}'
+  run 'pg_dump {{database}} > {{backup_path}}/backup_$(date +%Y%m%d_%H%M%S).sql'
+end
+
+# 应用部署
+task 'deploy_app', on: :app do
+  run <<~DEPLOY
+    cd {{deploy_to}}
+    git pull origin {{branch}}
+    bundle install --deployment --without development test
+    bundle exec rake assets:precompile RAILS_ENV={{environment}}
+    bundle exec rake db:migrate RAILS_ENV={{environment}}
+    touch tmp/restart.txt
+  DEPLOY
+end
+
+# 健康检查
+task 'health_check', on: %i[web app] do
+  run 'systemctl status nginx', ignore_errors: true
+  run 'systemctl status {{application}}', ignore_errors: true
+  run 'curl -f http://localhost:{{nginx_port}}/health || echo "Health check failed"',
+      timeout: 10, ignore_errors: true
+end
+
+# 缓存清理
+task 'clear_cache', on: :app do
+  run 'cd {{deploy_to}} && bundle exec rake cache:clear RAILS_ENV={{environment}}'
+end
+
+# 日志轮转
+task 'rotate_logs', on: :all do
+  run 'logrotate -f /etc/logrotate.d/{{application}}'
+end
+
+# 监控检查
+task 'check_monitoring', on: :all do
+  run 'ps aux | grep prometheus-node-exporter'
+  run 'curl -s http://localhost:9100/metrics'
+end
+
+# 完整部署流程
+task 'deploy' do
+  invoke 'system_health'
+  invoke 'backup'
+  invoke 'prepare'
+  invoke 'setup_nginx'
+  invoke 'setup_service'
+  invoke 'deploy_app'
+  invoke 'migrate'
+  invoke 'clear_cache'
+  invoke 'health_check'
+end
+
+# 回滚流程
+task 'rollback' do
+  invoke 'backup'
+  invoke 'rollback_code'
+  invoke 'rollback_db'
+  invoke 'clear_cache'
+  invoke 'health_check'
+end
+
+# 紧急维护模式
+task 'maintenance_on', on: :web do
+  upload_template 'maintenance.html.erb', '{{deploy_to}}/public/maintenance.html'
+  run 'mv {{deploy_to}}/public/maintenance.html {{deploy_to}}/public/index.html'
+end
+
+task 'maintenance_off', on: :web do
+  run 'mv {{deploy_to}}/public/index.html {{deploy_to}}/public/maintenance.html'
+end
+
+# 本地命令
+local 'echo "=== Deployment complete ==="'

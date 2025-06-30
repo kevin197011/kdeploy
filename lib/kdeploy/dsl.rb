@@ -2,721 +2,296 @@
 
 module Kdeploy
   class DSL
-    def initialize(script_dir = nil)
-      @pipeline = Pipeline.new('default')
-      @current_task = nil
-      @inventory = nil
-      @script_dir = script_dir || Dir.pwd
-      @template_dir = nil
-      @template_manager = nil
+    attr_reader :pipeline, :script_dir, :global_variables
+
+    def initialize(script_dir)
+      @script_dir = script_dir
+      @pipeline = Pipeline.new
+      @global_variables = {}
     end
 
-    # Get pipeline or set pipeline name
-    # @param name [String] Pipeline name (optional)
-    # @return [Pipeline] Pipeline instance
-    def pipeline(name = nil)
-      @pipeline.instance_variable_set(:@name, name) if name
-      @pipeline
+    # 设置变量
+    def set(name, value)
+      @global_variables[name.to_s] = value
     end
 
-    # Set global variable
-    # @param key [String] Variable key
-    # @param value [Object] Variable value
-    def set(key, value)
-      @pipeline.set_variable(key, value)
+    # 加载主机清单
+    def inventory(file)
+      inventory_file = File.expand_path(file, script_dir)
+      raise ConfigError, "Inventory file not found: #{inventory_file}" unless File.exist?(inventory_file)
+
+      @pipeline.inventory = Inventory.load(inventory_file)
+      @global_variables.merge!(@pipeline.inventory.global_variables)
     end
 
-    # Define host
-    # @param hostname [String] Hostname or IP address
-    # @param user [String] SSH user
-    # @param port [Integer] SSH port
-    # @param roles [Array] Host roles
-    # @param vars [Hash] Host variables
-    # @param ssh_options [Hash] SSH connection options
-    def host(hostname, user: nil, port: nil, roles: [], vars: {}, **ssh_options)
-      @pipeline.add_host(hostname, user: user, port: port, roles: roles, vars: vars, ssh_options: ssh_options)
-    end
-
-    # Define multiple hosts
-    # @param hosts_config [Hash] Hosts configuration
-    def hosts(hosts_config)
-      @pipeline.add_hosts(hosts_config)
-    end
-
-    # Load hosts from inventory file
-    # @param inventory_file [String] Path to inventory file
-    def inventory(inventory_file = nil)
-      inventory_file ||= Kdeploy.configuration&.inventory_file || 'inventory.yml'
-
-      # Resolve relative path to script directory
-      inventory_file = File.join(@script_dir, inventory_file) unless File.absolute_path?(inventory_file)
-
-      unless File.exist?(inventory_file)
-        KdeployLogger.warn("Inventory file not found: #{inventory_file}")
-        return
-      end
-
-      @inventory = Inventory.new(inventory_file)
-
-      # Add all hosts from inventory to pipeline
-      @inventory.all_hosts.each do |host|
-        @pipeline.add_host(
-          host.hostname,
-          user: host.user,
-          port: host.port,
-          roles: host.roles,
-          vars: host.vars,
-          ssh_options: host.ssh_options
-        )
-      end
-
-      # Add inventory variables to pipeline
-      @inventory.global_vars.each do |key, value|
-        @pipeline.set_variable(key, value)
-      end
-
-      KdeployLogger.info("Loaded #{@inventory.all_hosts.size} hosts from inventory: #{inventory_file}")
-    end
-
-    # Set template directory
-    # @param dir [String] Template directory path
+    # 设置模板目录
     def template_dir(dir)
-      # Resolve relative path to script directory
-      dir = File.join(@script_dir, dir) unless File.absolute_path?(dir)
+      template_dir = File.expand_path(dir, script_dir)
+      raise ConfigError, "Template directory not found: #{template_dir}" unless Dir.exist?(template_dir)
 
-      unless File.directory?(dir)
-        KdeployLogger.warn("Template directory not found: #{dir}")
-        return
-      end
-
-      @template_dir = dir
-      KdeployLogger.info("Template directory set to: #{dir}")
+      @pipeline.template_dir = template_dir
     end
 
-    # Get or initialize template manager
-    # @return [TemplateManager] Template manager instance
-    def template_manager
-      @template_manager ||= begin
-        template_dir = Kdeploy.configuration&.template_dir || 'templates'
-        template_dir = File.join(@script_dir, template_dir) unless File.absolute_path?(template_dir)
-        TemplateManager.new(template_dir, @pipeline.variables)
-      end
+    # 定义任务
+    def task(name, options = {}, &block)
+      task = Task.new(name, options)
+      task.global_variables = @global_variables
+      task.instance_eval(&block) if block_given?
+      @pipeline.add_task(task)
     end
 
-    # Define task
-    # @param name [String] Task name
-    # @param on [Array, Symbol] Target hosts or role
-    # @param parallel [Boolean] Run in parallel
-    # @param fail_fast [Boolean] Stop on first error
-    # @param max_concurrent [Integer] Maximum concurrent hosts
-    def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &block)
-      # Convert role to array if it's a symbol
-      target_hosts = case on
-                     when Symbol
-                       @pipeline.hosts_with_role(on)
-                     when Array
-                       on.flat_map do |target|
-                         target.is_a?(Symbol) ? @pipeline.hosts_with_role(target) : target
-                       end
-                     else
-                       @pipeline.hosts
-                     end
-
-      # Create task
-      @current_task = @pipeline.add_task(
-        name,
-        hosts: target_hosts,
-        parallel: parallel,
-        fail_fast: fail_fast,
-        max_concurrent: max_concurrent
-      )
-
-      # Execute task block
-      instance_eval(&block) if block_given?
-
-      # Reset current task
-      @current_task = nil
+    # 执行本地命令
+    def local(command)
+      task = Task.new("local_#{command.truncate(20)}")
+      task.global_variables = @global_variables
+      task.local(command)
+      @pipeline.add_task(task)
     end
 
-    # Execute command in current task
-    # Supports both single line commands and heredoc syntax
-    # @param command [String] Command to execute (supports heredoc)
-    # @param name [String] Command name (optional)
-    # @param timeout [Integer] Command timeout
-    # @param retry_count [Integer] Number of retries
-    # @param retry_delay [Integer] Delay between retries
-    # @param ignore_errors [Boolean] Continue on error
-    # @param only [Array, Symbol] Run only on specified roles
-    # @param except [Array, Symbol] Skip specified roles
-    def run(command, name: nil, timeout: nil, retry_count: nil, retry_delay: nil,
-            ignore_errors: false, only: nil, except: nil)
-      raise 'run can only be called within a task block' unless @current_task
+    # 包含其他脚本
+    def include(file)
+      script_file = File.expand_path(file, script_dir)
+      raise ConfigError, "Script file not found: #{script_file}" unless File.exist?(script_file)
 
-      # Process heredoc commands - split multi-line commands into separate commands
-      processed_commands = process_heredoc_command(command)
-
-      processed_commands.each_with_index do |cmd, index|
-        cmd = cmd.strip
-        next if cmd.empty? || cmd.start_with?('#') # Skip empty lines and comments
-
-        command_name = if processed_commands.size > 1
-                         name ? "#{name}_#{index + 1}" : "#{cmd.split.first || 'unnamed'}_#{index + 1}"
-                       else
-                         name || cmd.split.first || 'unnamed'
-                       end
-
-        options = {
-          name: command_name,
-          timeout: timeout,
-          retry_count: retry_count,
-          retry_delay: retry_delay,
-          ignore_errors: ignore_errors,
-          only: only,
-          except: except,
-          global_variables: @pipeline.variables
-        }
-
-        @current_task.add_command(cmd, options)
-      end
+      instance_eval(File.read(script_file), script_file)
     end
 
-    # Execute local command
-    # @param command [String] Local command to execute
-    # @param name [String] Command name (optional)
-    def local(command, name: nil)
-      # Process heredoc commands - split multi-line commands into separate commands
-      processed_commands = process_heredoc_command(command)
+    # 导入公共任务
+    def import(name)
+      script_file = File.join(script_dir, 'scripts', "#{name}.rb")
+      raise ConfigError, "Task script not found: #{script_file}" unless File.exist?(script_file)
 
-      processed_commands.each_with_index do |cmd, index|
-        cmd = cmd.strip
-        next if cmd.empty? || cmd.start_with?('#') # Skip empty lines and comments
-
-        command_name = if processed_commands.size > 1
-                         name ? "#{name}_#{index + 1}" : "#{cmd.split.first || 'unnamed'}_#{index + 1}"
-                       else
-                         name || cmd.split.first || 'unnamed'
-                       end
-
-        # Create a local host if not exists
-        local_host = Host.new('localhost', user: ENV.fetch('USER', nil), port: 22)
-
-        # Create a task for local command
-        task = Task.new("local_#{command_name}", [local_host])
-        task.global_variables = @pipeline.variables
-
-        # Add command to task
-        task.add_command(cmd, name: command_name)
-
-        # Execute task
-        task.execute
-      end
+      instance_eval(File.read(script_file), script_file)
     end
 
-    # Upload file to hosts
-    # @param local_path [String] Local file path
-    # @param remote_path [String] Remote file path
-    # @param name [String] Command name (optional)
-    def upload(local_path, remote_path, name: nil)
-      raise 'upload can only be called within a task block' unless @current_task
-
-      command_name = name || "upload #{File.basename(local_path)}"
-
-      # Add mkdir command first
-      run("mkdir -p #{File.dirname(remote_path)}", name: 'create directory')
-
-      # Add upload command with global variables
-      upload_command = UploadCommand.new(local_path, remote_path, @pipeline.variables)
-      upload_command.instance_variable_set(:@name, command_name)
-      @current_task.commands << upload_command
+    # 设置角色
+    def role(name, hosts)
+      @pipeline.inventory.add_role(name, hosts)
     end
 
-    # Upload template file to remote host
-    # @param template [String] Template file path
-    # @param destination [String] Remote destination path
-    # @param name [String] Command name (optional)
-    # @param timeout [Integer] Command timeout
-    # @param retry_count [Integer] Number of retries
-    # @param retry_delay [Integer] Delay between retries
-    # @param ignore_errors [Boolean] Continue on error
-    # @param only [Array, Symbol] Run only on specified roles
-    # @param except [Array, Symbol] Skip specified roles
-    def upload_template(template, destination, name: nil, timeout: nil, retry_count: nil, retry_delay: nil,
-                        ignore_errors: false, only: nil, except: nil)
-      raise 'upload_template can only be called within a task block' unless @current_task
-      raise 'Template directory not set' unless @template_dir
-
-      # Resolve template path
-      template_path = File.join(@template_dir, template)
-      raise "Template file not found: #{template_path}" unless File.exist?(template_path)
-
-      # Create temporary file with processed template
-      require 'tempfile'
-      require 'erb'
-      require 'ostruct'
-
-      temp_file = Tempfile.new(['kdeploy', File.extname(template)])
-      begin
-        # Read template content
-        template_content = File.read(template_path)
-
-        # Create binding with variables
-        variables = @pipeline.variables.merge(@current_task.global_variables)
-        binding_object = OpenStruct.new(variables).instance_eval { binding }
-
-        # Process template with ERB
-        erb = ERB.new(template_content)
-        processed_content = erb.result(binding_object)
-
-        # Write processed content to temp file
-        temp_file.write(processed_content)
-        temp_file.close
-
-        # Add upload command
-        command_name = name || "upload_template_#{File.basename(template)}"
-        @current_task.add_command(
-          "cat #{temp_file.path} | ssh -o StrictHostKeyChecking=no {{user}}@{{hostname}} 'cat > #{destination}'",
-          name: command_name,
-          timeout: timeout,
-          retry_count: retry_count,
-          retry_delay: retry_delay,
-          ignore_errors: ignore_errors,
-          only: only,
-          except: except
-        )
-      ensure
-        temp_file.unlink
-      end
+    # 设置主机组
+    def group(name, hosts)
+      @pipeline.inventory.add_group(name, hosts)
     end
 
-    # Render template to string
-    # @param template_name [String] Template name
-    # @param variables [Hash] Template variables
-    # @return [String] Rendered template content
-    def render_template(template_name, variables = {})
-      template_manager.render(template_name, variables)
+    # 设置环境变量
+    def env(name, value)
+      @global_variables["env_#{name}"] = value
     end
 
-    # Execute rendered template as script
-    # @param template_name [String] Template name
-    # @param variables [Hash] Template variables
-    # @param name [String] Command name (optional)
-    def run_template(template_name, variables: {}, name: nil)
-      raise 'run_template can only be called within a task block' unless @current_task
-
-      rendered_script = template_manager.render(template_name, variables)
-      command_name = name || "run_template #{template_name}"
-
-      run(rendered_script, name: command_name)
+    # 设置标签
+    def tag(name, value)
+      @global_variables["tag_#{name}"] = value
     end
 
-    # Download file from hosts
-    # @param remote_path [String] Remote file path
-    # @param local_path [String] Local file path
-    # @param name [String] Command name (optional)
-    def download(remote_path, local_path, name: nil)
-      raise 'download can only be called within a task block' unless @current_task
-
-      command_name = name || "download #{File.basename(remote_path)}"
-
-      # Add download command with global variables
-      download_command = DownloadCommand.new(remote_path, local_path, @pipeline.variables)
-      download_command.instance_variable_set(:@name, command_name)
-      @current_task.commands << download_command
+    # 设置超时时间
+    def timeout(seconds)
+      @pipeline.timeout = seconds
     end
 
-    # Define role-based host group
-    # @param role [Symbol] Role name
-    # @return [Array<Host>] Hosts with specified role
-    def role(role)
-      @pipeline.hosts_with_role(role)
+    # 设置并发数
+    def concurrency(number)
+      @pipeline.concurrency = number
     end
 
-    # Conditional execution
-    # @param condition [Boolean] Condition to check
-    def when(condition, &block)
-      instance_eval(&block) if condition && block_given?
+    # 设置重试次数
+    def retries(count)
+      @pipeline.retries = count
     end
 
-    # Execute block unless condition is true
-    # @param condition [Boolean] Condition to check
-    def unless(condition, &block)
-      instance_eval(&block) if !condition && block_given?
+    # 设置错误处理策略
+    def on_error(strategy)
+      @pipeline.error_strategy = strategy
     end
 
-    # Include another deployment script
-    # @param script_path [String] Path to script file
-    def include(script_path)
-      return unless File.exist?(script_path)
-
-      KdeployLogger.debug("Including script: #{script_path}")
-      script_content = File.read(script_path)
-      instance_eval(script_content, script_path)
+    # 设置通知配置
+    def notify(config)
+      @pipeline.notification_config = config
     end
 
-    private
-
-    # Execute a single local command
-    # @param cmd [String] Command to execute
-    # @param name [String] Base command name
-    # @param index [Integer] Command index
-    # @param total_commands [Integer] Total number of commands
-    def execute_local_command(cmd, name, index, total_commands)
-      require 'open3'
-
-      cmd = cmd.strip
-      return if cmd.empty? || cmd.start_with?('#') # Skip empty lines and comments
-
-      command_name = generate_local_command_name(cmd, name, index, total_commands)
-      processed_cmd = process_local_command_variables(cmd)
-
-      log_local_command_start(command_name, processed_cmd)
-
-      start_time = Time.now
-      stdout, stderr, status = Open3.capture3(processed_cmd)
-      duration = Time.now - start_time
-
-      if status.success?
-        log_local_command_success(command_name, duration, stdout)
-      else
-        log_local_command_failure(command_name, duration, status.exitstatus, stdout, stderr)
-        raise CommandError, "Local command failed: #{cmd}"
-      end
+    # 设置日志级别
+    def log_level(level)
+      Config.logger.level = level
     end
 
-    # Generate command name for local execution
-    def generate_local_command_name(cmd, name, index, total_commands)
-      return name || "local: #{cmd.split.first || 'script'}" if total_commands == 1
-
-      name ? "#{name}_#{index + 1}" : "local: #{cmd.split.first || 'script'}_#{index + 1}"
+    # 设置日志文件
+    def log_file(file)
+      Config.logger.output = File.expand_path(file, script_dir)
     end
 
-    # Process template variables in local command
-    def process_local_command_variables(cmd)
-      processed_cmd = cmd.dup
-      @pipeline.variables.each do |key, value|
-        processed_cmd = processed_cmd.gsub("{{#{key}}}", value.to_s)
-        processed_cmd = processed_cmd.gsub("${#{key}}", value.to_s)
-      end
-      processed_cmd
+    # 设置统计配置
+    def stats_config(config)
+      @pipeline.stats_config = config
     end
 
-    # Log local command execution start
-    def log_local_command_start(command_name, processed_cmd)
-      KdeployLogger.info("🚀 Executing local command '#{command_name}'")
-      KdeployLogger.debug("   Command: #{processed_cmd}")
+    # 设置健康检查配置
+    def health_check(config)
+      @pipeline.health_check_config = config
     end
 
-    # Log successful local command completion
-    def log_local_command_success(command_name, duration, stdout)
-      KdeployLogger.info("✅ Local command '#{command_name}' completed in #{duration.round(2)}s")
-      return if stdout.strip.empty?
-
-      KdeployLogger.info('📤 Output:')
-      stdout.strip.split("\n").each { |line| KdeployLogger.info("   #{line}") }
+    # 设置备份配置
+    def backup_config(config)
+      @pipeline.backup_config = config
     end
 
-    # Log failed local command
-    def log_local_command_failure(command_name, duration, exit_code, stdout, stderr)
-      KdeployLogger.error("❌ Local command '#{command_name}' failed in #{duration.round(2)}s (exit code: #{exit_code})")
-      KdeployLogger.error("📤 STDERR: #{stderr}") unless stderr.strip.empty?
-      KdeployLogger.error("📤 STDOUT: #{stdout}") unless stdout.strip.empty?
+    # 设置监控配置
+    def monitoring_config(config)
+      @pipeline.monitoring_config = config
     end
 
-    # Resolve target hosts from various formats
-    # @param target [Array, Symbol, String, nil] Target specification
-    # @return [Array<Host>] Resolved hosts
-    def resolve_target_hosts(target)
-      return @pipeline.hosts if target.nil?
-
-      case target
-      when Array
-        target.flat_map { |t| resolve_single_target(t) }
-      else
-        resolve_single_target(target)
-      end
+    # 设置告警配置
+    def alert_config(config)
+      @pipeline.alert_config = config
     end
 
-    # Resolve single target specification
-    # @param target [Symbol, String] Single target specification
-    # @return [Array<Host>] Resolved hosts
-    def resolve_single_target(target)
-      case target
-      when Symbol
-        target_str = target.to_s
-
-        # Try inventory groups first if available
-        if @inventory
-          inventory_hosts = @inventory.hosts_in_group(target_str)
-          return inventory_hosts unless inventory_hosts.empty?
-
-          # Try inventory roles
-          inventory_role_hosts = @inventory.hosts_with_role(target_str)
-          return inventory_role_hosts unless inventory_role_hosts.empty?
-        end
-
-        # Fallback to pipeline roles
-        @pipeline.hosts_with_role(target)
-      when String
-        # Try exact hostname match first
-        hosts_by_name = @pipeline.hosts.select { |h| h.hostname == target }
-        return hosts_by_name unless hosts_by_name.empty?
-
-        # Try inventory groups if available
-        if @inventory
-          inventory_hosts = @inventory.hosts_in_group(target)
-          return inventory_hosts unless inventory_hosts.empty?
-
-          # Try inventory roles
-          inventory_role_hosts = @inventory.hosts_with_role(target)
-          return inventory_role_hosts unless inventory_role_hosts.empty?
-        end
-
-        # Fallback to pipeline roles
-        @pipeline.hosts_with_role(target)
-      else
-        []
-      end
+    # 设置回滚配置
+    def rollback_config(config)
+      @pipeline.rollback_config = config
     end
 
-    # Process heredoc commands into individual command lines
-    # @param command [String] Command string (may contain multiple lines)
-    # @return [Array<String>] Array of individual commands
-    def process_heredoc_command(command)
-      # Split by newlines and process each line
-      lines = command.split(/\r?\n/)
-
-      # If single line, return as is
-      return [command] if lines.size == 1
-
-      # Process multi-line heredoc
-      processed_lines = []
-
-      lines.each do |line|
-        line = line.strip
-
-        # Skip empty lines and comments
-        next if line.empty? || line.start_with?('#')
-
-        # Handle line continuation (backslash at end)
-        if line.end_with?('\\')
-          line = line[0..-2] # Remove backslash
-          if processed_lines.empty?
-            processed_lines << line
-          else
-            processed_lines[-1] += " #{line}"
-          end
-        elsif processed_lines.empty? || !processed_lines[-1].end_with?(' ')
-          processed_lines << line
-        else
-          processed_lines[-1] += line
-        end
-      end
-
-      processed_lines.empty? ? [command] : processed_lines
-    end
-  end
-
-  # Special command class for file uploads
-  class UploadCommand < Command
-    def initialize(local_path, remote_path, global_variables = {})
-      @local_path = local_path
-      @remote_path = remote_path
-      @global_variables = global_variables
-      super('upload', "upload #{local_path} #{remote_path}")
+    # 设置清理配置
+    def cleanup_config(config)
+      @pipeline.cleanup_config = config
     end
 
-    def execute(host, connection)
-      start_time = Time.now
-
-      # Process remote path template variables
-      processed_remote_path = @remote_path.dup
-      # Merge global variables with host variables
-      all_variables = @global_variables.merge(host.vars).merge(
-        hostname: host.hostname,
-        user: host.user,
-        port: host.port
-      )
-
-      all_variables.each do |key, value|
-        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
-        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
-      end
-
-      KdeployLogger.info("Uploading '#{@local_path}' to #{host}:#{processed_remote_path}")
-
-      success = connection.upload(@local_path, processed_remote_path)
-
-      duration = Time.now - start_time
-      @result = {
-        success: success,
-        duration: duration
-      }
-
-      if success
-        KdeployLogger.info("Upload completed to #{host} in #{duration.round(2)}s")
-      else
-        KdeployLogger.error("Upload failed to #{host} after #{duration.round(2)}s")
-      end
-
-      success
-    end
-  end
-
-  # Special command class for file downloads
-  class DownloadCommand < Command
-    def initialize(remote_path, local_path, global_variables = {})
-      @remote_path = remote_path
-      @local_path = local_path
-      @global_variables = global_variables
-      super('download', "download #{remote_path} #{local_path}")
+    # 设置安全配置
+    def security_config(config)
+      @pipeline.security_config = config
     end
 
-    def execute(host, connection)
-      start_time = Time.now
-
-      # Process remote path template variables
-      processed_remote_path = @remote_path.dup
-      # Merge global variables with host variables
-      all_variables = @global_variables.merge(host.vars).merge(
-        hostname: host.hostname,
-        user: host.user,
-        port: host.port
-      )
-
-      all_variables.each do |key, value|
-        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
-        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
-      end
-
-      # Create unique local path for each host
-      host_local_path = @local_path.sub(/(\.[^.]+)?$/) { "_#{host.hostname}#{::Regexp.last_match(1)}" }
-
-      KdeployLogger.info("Downloading '#{processed_remote_path}' from #{host} to #{host_local_path}")
-
-      success = connection.download(processed_remote_path, host_local_path)
-
-      duration = Time.now - start_time
-      @result = {
-        success: success,
-        duration: duration,
-        local_path: host_local_path
-      }
-
-      if success
-        KdeployLogger.info("Download completed from #{host} in #{duration.round(2)}s")
-      else
-        KdeployLogger.error("Download failed from #{host} after #{duration.round(2)}s")
-      end
-
-      success
-    end
-  end
-
-  # Special command class for template uploads
-  class TemplateUploadCommand < Command
-    def initialize(template_name, remote_path, variables, template_manager, global_variables = {})
-      @template_name = template_name
-      @remote_path = remote_path
-      @variables = variables
-      @template_manager = template_manager
-      @global_variables = global_variables
-      super('upload_template', "upload_template #{template_name} #{remote_path}")
+    # 设置性能配置
+    def performance_config(config)
+      @pipeline.performance_config = config
     end
 
-    def execute(host, connection)
-      start_time = Time.now
-
-      host_variables = build_host_variables(host)
-      processed_remote_path = process_remote_path_variables(host_variables)
-      success = perform_template_upload(host, connection, host_variables, processed_remote_path)
-
-      record_execution_result(start_time, success, host)
-    rescue StandardError => e
-      log_upload_failure(e, start_time, host)
+    # 设置缓存配置
+    def cache_config(config)
+      @pipeline.cache_config = config
     end
 
-    private
-
-    def build_host_variables(host)
-      # Merge variables in priority order: global < template < host < host_info
-      host_variables = @global_variables.merge(@variables).merge(
-        hostname: host.hostname,
-        user: host.user,
-        port: host.port
-      )
-
-      # Add host custom variables (highest priority except for host info)
-      host.vars.each { |k, v| host_variables[k] = v }
-      host_variables
+    # 设置代理配置
+    def proxy_config(config)
+      @pipeline.proxy_config = config
     end
 
-    def process_remote_path_variables(host_variables)
-      processed_remote_path = @remote_path.dup
-      host_variables.each do |key, value|
-        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
-        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
-      end
-      processed_remote_path
+    # 设置SSL配置
+    def ssl_config(config)
+      @pipeline.ssl_config = config
     end
 
-    def perform_template_upload(host, connection, host_variables, processed_remote_path)
-      rendered_content = @template_manager.render(@template_name, host_variables)
-      temp_file = create_temp_file(rendered_content)
-
-      KdeployLogger.info("Uploading rendered template '#{@template_name}' to #{host}:#{processed_remote_path}")
-
-      success = upload_template_file(connection, temp_file, processed_remote_path)
-      cleanup_temp_file(temp_file)
-      success
+    # 设置防火墙配置
+    def firewall_config(config)
+      @pipeline.firewall_config = config
     end
 
-    def create_temp_file(content)
-      temp_file = "/tmp/kdeploy_template_#{Time.now.to_i}_#{Process.pid}"
-      File.write(temp_file, content)
-      temp_file
+    # 设置负载均衡配置
+    def load_balancer_config(config)
+      @pipeline.load_balancer_config = config
     end
 
-    def upload_template_file(connection, temp_file, processed_remote_path)
-      # Create remote directory first
-      connection.execute("mkdir -p #{File.dirname(processed_remote_path)}")
-      # Upload rendered template
-      connection.upload(temp_file, processed_remote_path)
+    # 设置服务发现配置
+    def service_discovery_config(config)
+      @pipeline.service_discovery_config = config
     end
 
-    def cleanup_temp_file(temp_file)
-      FileUtils.rm_f(temp_file)
+    # 设置容器配置
+    def container_config(config)
+      @pipeline.container_config = config
     end
 
-    def record_execution_result(start_time, success, host)
-      duration = Time.now - start_time
-      @result = {
-        success: success,
-        duration: duration,
-        template: @template_name
-      }
-
-      if success
-        KdeployLogger.info("Template upload completed to #{host} in #{duration.round(2)}s")
-      else
-        KdeployLogger.error("Template upload failed to #{host} after #{duration.round(2)}s")
-      end
-
-      success
+    # 设置数据库配置
+    def database_config(config)
+      @pipeline.database_config = config
     end
 
-    def log_upload_failure(error, start_time, host)
-      # Cleanup temporary file on error
-      cleanup_temp_file(@temp_file) if defined?(@temp_file) && File.exist?(@temp_file)
+    # 设置缓存配置
+    def cache_config(config)
+      @pipeline.cache_config = config
+    end
 
-      duration = Time.now - start_time
-      @result = {
-        success: false,
-        duration: duration,
-        error: error.message
-      }
+    # 设置消息队列配置
+    def queue_config(config)
+      @pipeline.queue_config = config
+    end
 
-      KdeployLogger.error("Template upload failed to #{host}: #{error.message}")
-      false
+    # 设置存储配置
+    def storage_config(config)
+      @pipeline.storage_config = config
+    end
+
+    # 设置CDN配置
+    def cdn_config(config)
+      @pipeline.cdn_config = config
+    end
+
+    # 设置DNS配置
+    def dns_config(config)
+      @pipeline.dns_config = config
+    end
+
+    # 设置邮件配置
+    def mail_config(config)
+      @pipeline.mail_config = config
+    end
+
+    # 设置短信配置
+    def sms_config(config)
+      @pipeline.sms_config = config
+    end
+
+    # 设置推送配置
+    def push_config(config)
+      @pipeline.push_config = config
+    end
+
+    # 设置支付配置
+    def payment_config(config)
+      @pipeline.payment_config = config
+    end
+
+    # 设置认证配置
+    def auth_config(config)
+      @pipeline.auth_config = config
+    end
+
+    # 设置授权配置
+    def authorization_config(config)
+      @pipeline.authorization_config = config
+    end
+
+    # 设置审计配置
+    def audit_config(config)
+      @pipeline.audit_config = config
+    end
+
+    # 设置日志配置
+    def logging_config(config)
+      @pipeline.logging_config = config
+    end
+
+    # 设置监控配置
+    def monitoring_config(config)
+      @pipeline.monitoring_config = config
+    end
+
+    # 设置追踪配置
+    def tracing_config(config)
+      @pipeline.tracing_config = config
+    end
+
+    # 设置指标配置
+    def metrics_config(config)
+      @pipeline.metrics_config = config
+    end
+
+    # 设置告警配置
+    def alerting_config(config)
+      @pipeline.alerting_config = config
+    end
+
+    # 设置仪表盘配置
+    def dashboard_config(config)
+      @pipeline.dashboard_config = config
     end
   end
 end

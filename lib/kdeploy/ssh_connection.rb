@@ -1,5 +1,11 @@
 # frozen_string_literal: true
 
+require 'net/ssh'
+require 'net/scp'
+require 'timeout'
+require 'open3'
+require 'fileutils'
+
 module Kdeploy
   class SSHConnection
     attr_reader :host, :session
@@ -7,47 +13,46 @@ module Kdeploy
     def initialize(host)
       @host = host
       @session = nil
+      @connected = false
+      @mutex = Mutex.new
     end
 
-    # Establish SSH connection
-    # @return [Boolean] True if connection successful
+    # 建立SSH连接
     def connect
-      return if @session
+      return if connected?
 
-      require 'net/ssh'
+      @mutex.synchronize do
+        return if connected?
 
-      KdeployLogger.debug("Connecting to #{@host}")
+        Config.logger.debug("Connecting to #{@host}")
 
-      begin
-        @session = Net::SSH.start(
-          @host.hostname,
-          @host.user,
-          port: @host.port,
-          **@host.connection_options
-        )
-      rescue Net::SSH::AuthenticationFailed => e
-        raise "SSH authentication failed for #{@host}: #{e.message}"
-      rescue Net::SSH::ConnectionTimeout => e
-        raise "SSH connection timed out for #{@host}: #{e.message}"
-      rescue StandardError => e
-        raise "SSH connection failed for #{@host}: #{e.message}"
+        begin
+          @session = Net::SSH.start(
+            @host.hostname,
+            @host.user,
+            port: @host.port,
+            **@host.connection_options
+          )
+          @connected = true
+          Config.logger.debug("Connected to #{@host}")
+        rescue Net::SSH::AuthenticationFailed => e
+          raise ExecutionError, "SSH authentication failed for #{@host}: #{e.message}"
+        rescue Net::SSH::ConnectionTimeout => e
+          raise ExecutionError, "SSH connection timed out for #{@host}: #{e.message}"
+        rescue StandardError => e
+          raise ExecutionError, "SSH connection failed for #{@host}: #{e.message}"
+        end
       end
-
-      KdeployLogger.debug("Connected to #{@host}")
     end
 
-    # Check if connection is active
-    # @return [Boolean] True if connected
+    # 检查连接状态
     def connected?
       @connected && @session && !@session.closed?
     end
 
-    # Execute command on remote host
-    # @param command [String] Command to execute
-    # @param timeout [Integer] Command timeout in seconds
-    # @return [Hash] Result with stdout, stderr, exit_code
-    def execute(command, timeout: nil)
-      return execute_local(command) if @host.hostname == 'localhost'
+    # 执行命令
+    def execute(command, options = {})
+      return execute_local(command, options) if @host.hostname == 'localhost'
 
       ensure_connected
 
@@ -58,31 +63,34 @@ module Kdeploy
         success: false
       }
 
-      timeout ||= Kdeploy.configuration&.command_timeout || 300
+      timeout = options[:timeout] || Config.command_timeout || 300
 
-      KdeployLogger.debug("Executing on #{@host}: #{command}")
+      Config.logger.debug("Executing on #{@host}: #{command}")
 
       begin
         Timeout.timeout(timeout) do
           channel = @session.open_channel do |ch|
-            ch.exec(command) do |ch, success|
-              unless success
-                result[:stderr] = 'Failed to execute command'
-                result[:exit_code] = 1
-                return result
-              end
+            if options[:sudo]
+              ch.request_pty
+              ch.exec("sudo -p 'sudo password: ' #{command}")
+            else
+              ch.exec(command)
+            end
 
-              ch.on_data do |_ch, data|
+            ch.on_data do |_ch, data|
+              if options[:sudo] && data.include?('sudo password: ')
+                _ch.send_data("#{options[:sudo_password]}\n")
+              else
                 result[:stdout] += data
               end
+            end
 
-              ch.on_extended_data do |_ch, _type, data|
-                result[:stderr] += data
-              end
+            ch.on_extended_data do |_ch, _type, data|
+              result[:stderr] += data
+            end
 
-              ch.on_request('exit-status') do |_ch, data|
-                result[:exit_code] = data.read_long
-              end
+            ch.on_request('exit-status') do |_ch, data|
+              result[:exit_code] = data.read_long
             end
           end
 
@@ -95,11 +103,11 @@ module Kdeploy
 
       result[:success] = result[:exit_code]&.zero? || false
 
-      KdeployLogger.debug("Command completed on #{@host}: exit_code=#{result[:exit_code]}")
+      Config.logger.debug("Command completed on #{@host}: exit_code=#{result[:exit_code]}")
 
       result
     rescue Net::SSH::Exception => e
-      KdeployLogger.error("SSH execution error on #{@host}: #{e.message}")
+      Config.logger.error("SSH execution error on #{@host}: #{e.message}")
       {
         stdout: '',
         stderr: e.message,
@@ -108,72 +116,195 @@ module Kdeploy
       }
     end
 
-    # Upload file to remote host
-    # @param local_path [String] Local file path
-    # @param remote_path [String] Remote file path
-    # @return [Boolean] True if upload successful
-    def upload(local_path, remote_path)
+    # 上传文件
+    def upload(local_path, remote_path, options = {})
       ensure_connected
 
-      KdeployLogger.debug("Uploading #{local_path} to #{@host}:#{remote_path}")
+      Config.logger.debug("Uploading #{local_path} to #{@host}:#{remote_path}")
 
-      @session.scp.upload!(local_path, remote_path)
+      begin
+        if options[:recursive]
+          @session.scp.upload!(local_path, remote_path, recursive: true)
+        else
+          @session.scp.upload!(local_path, remote_path)
+        end
 
-      KdeployLogger.debug("Upload completed: #{local_path} -> #{@host}:#{remote_path}")
-      true
-    rescue Net::SCP::Error => e
-      KdeployLogger.error("Upload failed #{local_path} -> #{@host}:#{remote_path}: #{e.message}")
-      false
+        execute("chmod #{options[:mode]} #{remote_path}") if options[:mode]
+
+        execute("chown #{options[:owner]} #{remote_path}") if options[:owner]
+
+        Config.logger.debug("Upload completed: #{local_path} -> #{@host}:#{remote_path}")
+        true
+      rescue Net::SCP::Error => e
+        Config.logger.error("Upload failed #{local_path} -> #{@host}:#{remote_path}: #{e.message}")
+        false
+      end
     end
 
-    # Download file from remote host
-    # @param remote_path [String] Remote file path
-    # @param local_path [String] Local file path
-    # @return [Boolean] True if download successful
-    def download(remote_path, local_path)
+    # 下载文件
+    def download(remote_path, local_path, options = {})
       ensure_connected
 
-      KdeployLogger.debug("Downloading #{@host}:#{remote_path} to #{local_path}")
+      Config.logger.debug("Downloading #{@host}:#{remote_path} to #{local_path}")
 
-      @session.scp.download!(remote_path, local_path)
+      begin
+        FileUtils.mkdir_p(File.dirname(local_path)) unless File.exist?(File.dirname(local_path))
 
-      KdeployLogger.debug("Download completed: #{@host}:#{remote_path} -> #{local_path}")
-      true
-    rescue Net::SCP::Error => e
-      KdeployLogger.error("Download failed #{@host}:#{remote_path} -> #{local_path}: #{e.message}")
-      false
+        if options[:recursive]
+          @session.scp.download!(remote_path, local_path, recursive: true)
+        else
+          @session.scp.download!(remote_path, local_path)
+        end
+
+        Config.logger.debug("Download completed: #{@host}:#{remote_path} -> #{local_path}")
+        true
+      rescue Net::SCP::Error => e
+        Config.logger.error("Download failed #{@host}:#{remote_path} -> #{local_path}: #{e.message}")
+        false
+      end
     end
 
-    # Close SSH connection
+    # 检查文件是否存在
+    def file_exists?(path)
+      result = execute("test -f #{path}")
+      result[:success]
+    end
+
+    # 检查目录是否存在
+    def directory_exists?(path)
+      result = execute("test -d #{path}")
+      result[:success]
+    end
+
+    # 创建目录
+    def mkdir(path, options = {})
+      cmd = ['mkdir']
+      cmd << '-p' if options[:parents]
+      cmd << path
+      result = execute(cmd.join(' '))
+      result[:success]
+    end
+
+    # 删除文件
+    def remove(path, options = {})
+      cmd = ['rm']
+      cmd << '-f' if options[:force]
+      cmd << path
+      result = execute(cmd.join(' '))
+      result[:success]
+    end
+
+    # 删除目录
+    def rmdir(path, options = {})
+      cmd = ['rm', '-r']
+      cmd << '-f' if options[:force]
+      cmd << path
+      result = execute(cmd.join(' '))
+      result[:success]
+    end
+
+    # 修改文件权限
+    def chmod(path, mode, options = {})
+      cmd = ['chmod']
+      cmd << '-R' if options[:recursive]
+      cmd << mode.to_s
+      cmd << path
+      result = execute(cmd.join(' '))
+      result[:success]
+    end
+
+    # 修改文件所有者
+    def chown(path, user, group = nil, options = {})
+      owner = group ? "#{user}:#{group}" : user
+      cmd = ['chown']
+      cmd << '-R' if options[:recursive]
+      cmd << owner
+      cmd << path
+      result = execute(cmd.join(' '))
+      result[:success]
+    end
+
+    # 读取文件内容
+    def read_file(path)
+      result = execute("cat #{path}")
+      result[:success] ? result[:stdout] : nil
+    end
+
+    # 写入文件内容
+    def write_file(path, content, options = {})
+      temp_file = Tempfile.new('kdeploy')
+      temp_file.write(content)
+      temp_file.close
+
+      success = upload(temp_file.path, path, options)
+      temp_file.unlink
+      success
+    end
+
+    # 追加文件内容
+    def append_file(path, content, _options = {})
+      temp_file = Tempfile.new('kdeploy')
+      temp_file.write(content)
+      temp_file.close
+
+      result = execute("cat #{temp_file.path} >> #{path}")
+      temp_file.unlink
+      result[:success]
+    end
+
+    # 获取文件属性
+    def stat(path)
+      result = execute("stat -c '%A %U %G %s %Y' #{path}")
+      return nil unless result[:success]
+
+      mode, user, group, size, mtime = result[:stdout].strip.split
+      {
+        mode: mode,
+        user: user,
+        group: group,
+        size: size.to_i,
+        mtime: Time.at(mtime.to_i)
+      }
+    end
+
+    # 获取文件列表
+    def ls(path = '.')
+      result = execute("ls -la #{path}")
+      return [] unless result[:success]
+
+      result[:stdout].lines[1..].map(&:strip)
+    end
+
+    # 关闭连接
     def disconnect
       return unless @session
 
-      @session.close unless @session.closed?
-      @session = nil
-      @connected = false
-      KdeployLogger.debug("Disconnected from #{@host}")
+      @mutex.synchronize do
+        return unless @session
+
+        @session.close unless @session.closed?
+        @session = nil
+        @connected = false
+        Config.logger.debug("Disconnected from #{@host}")
+      end
     end
 
-    # Clean up connection
-    def cleanup
-      return unless @session
+    alias close disconnect
 
-      KdeployLogger.debug("Closing connection to #{@host}")
-      @session.close
-      @session = nil
+    # 清理连接
+    def cleanup
+      disconnect
     end
 
     private
 
     def ensure_connected
       connect unless connected?
-      raise ConnectionError, "Not connected to #{@host}" unless connected?
+      raise ExecutionError, "Not connected to #{@host}" unless connected?
     end
 
-    def execute_local(command)
-      require 'open3'
-
-      KdeployLogger.debug("Executing locally: #{command}")
+    def execute_local(command, _options = {})
+      Config.logger.debug("Executing locally: #{command}")
 
       begin
         stdout, stderr, status = Open3.capture3(command)
@@ -185,11 +316,11 @@ module Kdeploy
           success: status.success?
         }
 
-        KdeployLogger.debug("Local command completed: exit_code=#{result[:exit_code]}")
+        Config.logger.debug("Local command completed: exit_code=#{result[:exit_code]}")
 
         result
       rescue StandardError => e
-        KdeployLogger.error("Local execution error: #{e.message}")
+        Config.logger.error("Local execution error: #{e.message}")
         {
           stdout: '',
           stderr: e.message,

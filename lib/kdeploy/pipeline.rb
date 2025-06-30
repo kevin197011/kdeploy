@@ -77,6 +77,12 @@ module Kdeploy
                        @hosts
                      end
 
+      # Validate hosts
+      if target_hosts.empty?
+        KdeployLogger.warn("No hosts found for role '#{hosts}', task '#{name}' will be skipped")
+        target_hosts = @hosts
+      end
+
       task = Task.new(name, target_hosts, options)
       # Set global variables from pipeline
       task.global_variables = @variables
@@ -177,6 +183,33 @@ module Kdeploy
     # @return [Boolean] True if pipeline is valid
     def valid?
       validate.empty?
+    end
+
+    private
+
+    def validate_required_variables
+      required_vars = %w[deploy_to user hostname]
+      missing_vars = []
+
+      required_vars.each do |var|
+        # Check if variable exists in global variables
+        next if @variables[var] || @variables[var.to_sym]
+
+        # Check if variable exists in any host variables
+        next if @hosts.any? { |host| (host.vars || {}).key?(var) || (host.vars || {}).key?(var.to_sym) }
+
+        # Check if variable is a host attribute
+        next if var == 'user' && @hosts.all? { |host| host.user }
+        next if var == 'hostname' && @hosts.all? { |host| host.hostname }
+
+        missing_vars << var
+      end
+
+      return if missing_vars.empty?
+
+      KdeployLogger.error("Missing required variables: #{missing_vars.join(', ')}")
+      KdeployLogger.error("Available variables: #{@variables.keys.join(', ')}")
+      raise "Missing required variables: #{missing_vars.join(', ')}"
     end
   end
 end

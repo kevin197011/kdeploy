@@ -3,14 +3,16 @@
 module Kdeploy
   class Host
     attr_reader :hostname, :user, :port, :ssh_options, :roles, :vars
+    attr_accessor :connection
 
     def initialize(hostname, user: nil, port: nil, ssh_options: {}, roles: [], vars: {})
       @hostname = hostname
-      @user = user || Kdeploy.configuration&.default_user || ENV.fetch('USER', 'root')
-      @port = port || Kdeploy.configuration&.default_port || 22
+      @user = user || vars['user'] || vars[:user] || Config.default_user || ENV.fetch('USER', 'root')
+      @port = port || Config.default_port || 22
       @ssh_options = ssh_options || {}
       @roles = Array(roles).map(&:to_s)
       @vars = vars || {}
+      @connection = nil
     end
 
     # Check if host has specific role
@@ -32,6 +34,7 @@ module Kdeploy
     # @param value [Object] Variable value
     def set_var(key, value)
       @vars[key.to_s] = value
+      @vars[key.to_sym] = value
     end
 
     # Get connection string for display
@@ -41,35 +44,186 @@ module Kdeploy
     end
 
     # Get SSH connection options
-    # @return [Hash] SSH options
+    # @return [Hash] SSH connection options
     def connection_options
-      options = @ssh_options.dup || {}
+      options = {}
 
-      # Convert key_file to keys option
-      options[:keys] = [options.delete('key_file') || options.delete(:key_file)] if options['key_file'] || options[:key_file]
-
-      # Convert verify_host_key to verify_host_key option
-      if options.key?('verify_host_key') || options.key?(:verify_host_key)
-        verify = options.delete('verify_host_key') || options.delete(:verify_host_key)
-        options[:verify_host_key] = verify ? :always : :never
+      # SSH key file
+      if @ssh_options['key_file'] || @ssh_options[:key_file]
+        key_file = @ssh_options['key_file'] || @ssh_options[:key_file]
+        options[:keys] = [File.expand_path(key_file)]
       end
 
-      # Add default options
-      options[:timeout] = options['timeout'] || options[:timeout] || 10
-      options[:keepalive] = true
-      options[:keepalive_interval] = 30
-      options[:non_interactive] = true
-      options[:verify_host_key] = :never unless options.key?(:verify_host_key)
+      # SSH key data
+      options[:key_data] = Array(@ssh_options['key_data'] || @ssh_options[:key_data]) if @ssh_options['key_data'] || @ssh_options[:key_data]
+
+      # Other SSH options
+      options[:password] = @ssh_options['password'] || @ssh_options[:password] if @ssh_options['password'] || @ssh_options[:password]
+      options[:passphrase] = @ssh_options['passphrase'] || @ssh_options[:passphrase] if @ssh_options['passphrase'] || @ssh_options[:passphrase]
+
+      # Host key verification
+      if @ssh_options.key?('verify_host_key') || @ssh_options.key?(:verify_host_key)
+        verify_host_key = @ssh_options['verify_host_key'] || @ssh_options[:verify_host_key]
+        options[:verify_host_key] = verify_host_key ? :always : :never
+      end
+
+      # Connection timeout
+      options[:timeout] = @ssh_options['timeout'] || @ssh_options[:timeout] if @ssh_options['timeout'] || @ssh_options[:timeout]
+
+      # 代理设置
+      options[:proxy] = @ssh_options['proxy'] || @ssh_options[:proxy] if @ssh_options['proxy'] || @ssh_options[:proxy]
+
+      # 压缩设置
+      options[:compression] = @ssh_options['compression'] || @ssh_options[:compression] if @ssh_options['compression'] || @ssh_options[:compression]
+
+      # 加密设置
+      options[:encryption] = @ssh_options['encryption'] || @ssh_options[:encryption] if @ssh_options['encryption'] || @ssh_options[:encryption]
+
+      # HMAC设置
+      options[:hmac] = @ssh_options['hmac'] || @ssh_options[:hmac] if @ssh_options['hmac'] || @ssh_options[:hmac]
+
+      # 主机密钥算法
+      options[:host_key] = @ssh_options['host_key'] || @ssh_options[:host_key] if @ssh_options['host_key'] || @ssh_options[:host_key]
+
+      # 密钥交换算法
+      options[:kex] = @ssh_options['kex'] || @ssh_options[:kex] if @ssh_options['kex'] || @ssh_options[:kex]
+
+      # 认证方法
+      if @ssh_options['auth_methods'] || @ssh_options[:auth_methods]
+        options[:auth_methods] = @ssh_options['auth_methods'] || @ssh_options[:auth_methods]
+      end
+
+      # 最大认证尝试次数
+      options[:max_tries] = @ssh_options['max_tries'] || @ssh_options[:max_tries] if @ssh_options['max_tries'] || @ssh_options[:max_tries]
+
+      # 连接重试次数
+      options[:retries] = @ssh_options['retries'] || @ssh_options[:retries] if @ssh_options['retries'] || @ssh_options[:retries]
+
+      # 连接重试延迟
+      options[:retry_delay] = @ssh_options['retry_delay'] || @ssh_options[:retry_delay] if @ssh_options['retry_delay'] || @ssh_options[:retry_delay]
+
+      # 连接保持时间
+      options[:keepalive] = @ssh_options['keepalive'] || @ssh_options[:keepalive] if @ssh_options['keepalive'] || @ssh_options[:keepalive]
+
+      # 连接保持间隔
+      if @ssh_options['keepalive_interval'] || @ssh_options[:keepalive_interval]
+        options[:keepalive_interval] = @ssh_options['keepalive_interval'] || @ssh_options[:keepalive_interval]
+      end
+
+      # 连接池大小
+      options[:pool_size] = @ssh_options['pool_size'] || @ssh_options[:pool_size] if @ssh_options['pool_size'] || @ssh_options[:pool_size]
+
+      # 连接池超时
+      if @ssh_options['pool_timeout'] || @ssh_options[:pool_timeout]
+        options[:pool_timeout] = @ssh_options['pool_timeout'] || @ssh_options[:pool_timeout]
+      end
 
       options
     end
 
+    # Get connection
+    def connection
+      @connection ||= SSHConnection.new(self)
+    end
+
+    # Close connection
+    def close
+      @connection&.close
+      @connection = nil
+    end
+
+    # Check connection status
+    def connected?
+      @connection&.connected?
+    end
+
+    # Reconnect
+    def reconnect
+      close
+      connection
+    end
+
+    # Execute command
+    def execute(command, options = {})
+      connection.execute(command, options)
+    end
+
+    # Upload file
+    def upload(source, target, options = {})
+      connection.upload(source, target, options)
+    end
+
+    # Download file
+    def download(source, target, options = {})
+      connection.download(source, target, options)
+    end
+
+    # Check if file exists
+    def file_exists?(path)
+      connection.file_exists?(path)
+    end
+
+    # Check if directory exists
+    def directory_exists?(path)
+      connection.directory_exists?(path)
+    end
+
+    # Create directory
+    def mkdir(path, options = {})
+      connection.mkdir(path, options)
+    end
+
+    # Remove file
+    def remove(path, options = {})
+      connection.remove(path, options)
+    end
+
+    # Remove directory
+    def rmdir(path, options = {})
+      connection.rmdir(path, options)
+    end
+
+    # Change file permissions
+    def chmod(path, mode, options = {})
+      connection.chmod(path, mode, options)
+    end
+
+    # Change file owner
+    def chown(path, user, group = nil, options = {})
+      connection.chown(path, user, group, options)
+    end
+
+    # Get file content
+    def read_file(path)
+      connection.read_file(path)
+    end
+
+    # Write file content
+    def write_file(path, content, options = {})
+      connection.write_file(path, content, options)
+    end
+
+    # Append file content
+    def append_file(path, content, options = {})
+      connection.append_file(path, content, options)
+    end
+
+    # Get file attributes
+    def stat(path)
+      connection.stat(path)
+    end
+
+    # Get file list
+    def ls(path = '.')
+      connection.ls(path)
+    end
+
     def to_s
-      "#{@user}@#{@hostname}:#{@port}"
+      connection_string
     end
 
     def inspect
-      "#<Kdeploy::Host #{connection_string} roles=#{@roles} vars=#{@vars.keys}>"
+      "#<#{self.class} #{connection_string} roles=#{@roles} vars=#{@vars.keys}>"
     end
 
     def ==(other)

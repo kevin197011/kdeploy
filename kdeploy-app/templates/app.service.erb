@@ -1,11 +1,11 @@
 [Unit]
-Description=<%= app_name %> service
+Description=<%= application %> service
 After=network.target
 
 [Service]
 Type=simple
-User=<%= deploy_user %>
-WorkingDirectory=<%= deploy_path %>
+User=<%= user %>
+WorkingDirectory=<%= deploy_to %>
 ExecStart=/usr/bin/node server.js
 Restart=always
 Environment=NODE_ENV=<%= environment %>

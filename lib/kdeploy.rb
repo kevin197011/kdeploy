@@ -1,72 +1,85 @@
 # frozen_string_literal: true
 
-require 'concurrent-ruby'
-require 'net/ssh'
-require 'net/scp'
-require 'yaml'
-require 'logger'
+require 'active_support'
+require 'active_support/core_ext'
 require 'colorize'
+require 'concurrent'
+require 'erb'
+require 'erubi'
+require 'fileutils'
+require 'json'
+require 'logger'
+require 'net/scp'
+require 'net/ssh'
+require 'pastel'
+require 'pathname'
+require 'thor'
+require 'tty-logger'
+require 'tty-prompt'
+require 'tty-progressbar'
+require 'tty-spinner'
+require 'tty-table'
+require 'yaml'
+require 'zeitwerk'
 
-require_relative 'kdeploy/version'
-require_relative 'kdeploy/configuration'
-require_relative 'kdeploy/logger'
-require_relative 'kdeploy/host'
-require_relative 'kdeploy/inventory'
-require_relative 'kdeploy/template'
-require_relative 'kdeploy/ssh_connection'
-require_relative 'kdeploy/command'
-require_relative 'kdeploy/task'
-require_relative 'kdeploy/pipeline'
-require_relative 'kdeploy/dsl'
-require_relative 'kdeploy/runner'
-require_relative 'kdeploy/statistics'
-require_relative 'kdeploy/cli'
+# 设置自动加载
+loader = Zeitwerk::Loader.for_gem
+loader.setup
 
 module Kdeploy
   class Error < StandardError; end
-  class ConnectionError < Error; end
-  class CommandError < Error; end
-  class ConfigurationError < Error; end
+  class ValidationError < Error; end
+  class ConfigError < Error; end
+  class ExecutionError < Error; end
+  class TemplateError < Error; end
 
-  class << self
-    attr_accessor :configuration
-    attr_reader :statistics
+  # 配置模块
+  module Config
+    extend self
 
-    # Initialize statistics
-    def statistics
-      @statistics ||= Statistics.new
+    attr_accessor :logger, :prompt, :pastel, :spinner
+
+    def setup
+      self.logger = TTY::Logger.new do |config|
+        config.level = :info
+        config.metadata = [:time]
+      end
+
+      self.prompt = TTY::Prompt.new
+      self.pastel = Pastel.new
+      self.spinner = TTY::Spinner.new('[:spinner] :title', format: :dots)
     end
 
-    # Configure kdeploy
-    def configure
-      self.configuration ||= Configuration.new
-      yield(configuration) if block_given?
-      configuration
+    def root
+      @root ||= Pathname.new(Dir.pwd)
     end
 
-    # Load and execute deployment script
-    # @param script_file [String] Path to deployment script
-    def load_script(script_file)
-      raise ConfigurationError, "Script file not found: #{script_file}" unless File.exist?(script_file)
-
-      script_dir = File.dirname(File.expand_path(script_file))
-      dsl = DSL.new(script_dir)
-      dsl.instance_eval(File.read(script_file), script_file)
-      dsl.pipeline
+    def templates_path
+      root.join('templates')
     end
 
-    # Execute deployment pipeline
-    # @param pipeline [Pipeline] Pipeline to execute
-    def execute(pipeline)
-      runner = Runner.new(pipeline)
-      runner.execute
-    end
-
-    # Convenient method to load and execute script
-    # @param script_file [String] Path to deployment script
-    def run(script_file)
-      pipeline = load_script(script_file)
-      execute(pipeline)
+    def inventory_path
+      root.join('inventory.yml')
     end
   end
+
+  # 初始化配置
+  Config.setup
 end
+
+# 加载所有子模块
+require_relative 'kdeploy/version'
+require_relative 'kdeploy/banner'
+require_relative 'kdeploy/cli'
+require_relative 'kdeploy/command'
+require_relative 'kdeploy/configuration'
+require_relative 'kdeploy/dsl'
+require_relative 'kdeploy/host'
+require_relative 'kdeploy/inventory'
+require_relative 'kdeploy/logger'
+require_relative 'kdeploy/pipeline'
+require_relative 'kdeploy/runner'
+require_relative 'kdeploy/ssh_connection'
+require_relative 'kdeploy/statistics'
+require_relative 'kdeploy/task'
+require_relative 'kdeploy/template'

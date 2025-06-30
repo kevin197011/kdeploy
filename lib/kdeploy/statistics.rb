@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require 'json'
-require 'fileutils'
-
 module Kdeploy
   class Statistics
     attr_reader :data

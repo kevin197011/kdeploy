@@ -9,40 +9,55 @@ inventory 'inventory.yml'
 # 设置模板目录
 template_dir 'templates'
 
-# 定义变量
-set 'application', 'myapp'
-set 'version', '1.0.0'
-set 'deploy_user', 'root'
-
 # 本地命令
 local 'echo "=== Starting deployment ==="'
 
+# 系统健康检查
+task 'system_health', on: :all do
+  run 'echo "=== System Health for {{hostname}} ==="'
+  run 'uptime'
+  run 'df -h'
+  run 'free -h'
+end
+
 # 准备目录
-task 'prepare', on: :app do
-  run 'mkdir -p {{deploy_path}}'
-  run 'chown -R {{deploy_user}}:{{deploy_user}} {{deploy_path}}'
+task 'prepare', on: :web do
+  run 'mkdir -p {{deploy_to}}', ignore_errors: true
+  run 'chown -R {{user}}:{{user}} {{deploy_to}}', ignore_errors: true
 end
 
 # 配置 Nginx
-task 'setup_nginx', on: :nginx do
-  upload_template 'nginx.conf.erb', '/etc/nginx/conf.d/{{app_name}}.conf'
+task 'setup_nginx', on: :web do
+  run 'apt-get update && apt-get install -y nginx', ignore_errors: true
+  upload_template 'nginx.conf.erb', '/etc/nginx/conf.d/{{application}}.conf'
   run 'nginx -t'
+  run 'systemctl enable nginx'
   run 'systemctl reload nginx'
 end
 
 # 配置应用服务
 task 'setup_service', on: :app do
-  upload_template 'app.service.erb', '/etc/systemd/system/{{app_name}}.service'
+  upload_template 'app.service.erb', '/etc/systemd/system/{{application}}.service'
   run 'systemctl daemon-reload'
-  run 'systemctl enable {{app_name}}'
-  run 'systemctl restart {{app_name}}'
+  run 'systemctl enable {{application}}'
+  run 'systemctl restart {{application}}'
 end
 
-# 检查服务状态
-task 'check', on: %i[nginx app] do
-  run 'systemctl status nginx'
-  run 'systemctl status {{app_name}}'
-  run 'curl -s http://localhost:{{nginx_port}}'
+# 健康检查
+task 'health_check', on: %i[web app] do
+  run 'systemctl status nginx', ignore_errors: true
+  run 'systemctl status {{application}}', ignore_errors: true
+  run 'curl -f http://localhost:{{nginx_port}}/health || echo "Health check failed"',
+      timeout: 10, ignore_errors: true
+end
+
+# 完整部署流程
+task 'deploy' do
+  invoke 'system_health'
+  invoke 'prepare'
+  invoke 'setup_nginx'
+  invoke 'setup_service'
+  invoke 'health_check'
 end
 
 # 本地命令
