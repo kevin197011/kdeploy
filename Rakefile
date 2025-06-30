@@ -11,7 +11,7 @@ task default: %w[push]
 
 desc 'Install the gem locally'
 task :install do
-  system 'gem uninstall kdeploy'
+  system 'gem uninstall kdeploy -aIx'
   system 'gem build kdeploy.gemspec'
   system "gem install kdeploy-#{Kdeploy::VERSION}.gem"
 end

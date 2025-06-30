@@ -79,20 +79,16 @@ module Kdeploy
       hosts = Set.new
 
       # 添加指定的主机
-      if task[:hosts]
-        task[:hosts].each do |host|
-          hosts.add(host) if kdeploy_hosts.key?(host)
-        end
+      task[:hosts]&.each do |host|
+        hosts.add(host) if kdeploy_hosts.key?(host)
       end
 
       # 添加角色中的主机
-      if task[:roles]
-        task[:roles].each do |role|
-          next unless role_hosts = kdeploy_roles[role]
+      task[:roles]&.each do |role|
+        next unless (role_hosts = kdeploy_roles[role])
 
-          role_hosts.each do |host|
-            hosts.add(host) if kdeploy_hosts.key?(host)
-          end
+        role_hosts.each do |host|
+          hosts.add(host) if kdeploy_hosts.key?(host)
         end
       end
 

@@ -2,6 +2,7 @@
 
 require 'erb'
 require 'ostruct'
+require 'tempfile'
 
 module Kdeploy
   class Template
