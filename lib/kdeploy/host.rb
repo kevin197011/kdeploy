@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Kdeploy
+  # Host class for managing remote host configuration and connection details
   class Host
     attr_reader :hostname, :user, :port, :ssh_options, :roles, :vars
 
@@ -30,6 +31,7 @@ module Kdeploy
     # Set variable value
     # @param key [String, Symbol] Variable key
     # @param value [Object] Variable value
+    # @return [Object] Set value
     def set_var(key, value)
       @vars[key.to_s] = value
     end
@@ -49,14 +51,21 @@ module Kdeploy
       )
     end
 
+    # String representation of the host
+    # @return [String] Connection string
     def to_s
       connection_string
     end
 
+    # Detailed string representation of the host
+    # @return [String] Host details
     def inspect
       "#<Kdeploy::Host #{connection_string} roles=#{@roles} vars=#{@vars.keys}>"
     end
 
+    # Compare hosts for equality
+    # @param other [Host] Host to compare with
+    # @return [Boolean] True if hosts are equal
     def ==(other)
       return false unless other.is_a?(Host)
 
@@ -67,6 +76,8 @@ module Kdeploy
 
     alias eql? ==
 
+    # Generate hash code for host
+    # @return [Integer] Hash code
     def hash
       [hostname, user, port].hash
     end

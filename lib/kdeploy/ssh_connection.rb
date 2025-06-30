@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Kdeploy
+  # SSHConnection class for managing SSH connections to remote hosts
   class SSHConnection
     attr_reader :host, :session
 
@@ -12,24 +13,16 @@ module Kdeploy
 
     # Establish SSH connection
     # @return [Boolean] True if connection successful
+    # @raise [ConnectionError] If connection fails
     def connect
       return true if connected?
 
       KdeployLogger.debug("Connecting to #{@host}")
-
-      @session = Net::SSH.start(
-        @host.hostname,
-        @host.user,
-        port: @host.port,
-        **@host.connection_options
-      )
-
-      @connected = true
+      establish_connection
       KdeployLogger.debug("Connected to #{@host}")
       true
     rescue Net::SSH::Exception => e
-      KdeployLogger.error("Failed to connect to #{@host}: #{e.message}")
-      raise ConnectionError, "Failed to connect to #{@host}: #{e.message}"
+      handle_connection_error(e)
     end
 
     # Check if connection is active
@@ -41,58 +34,20 @@ module Kdeploy
     # Execute command on remote host
     # @param command [String] Command to execute
     # @param timeout [Integer] Command timeout in seconds
-    # @return [Hash] Result with stdout, stderr, exit_code
+    # @return [Hash] Result with stdout, stderr, exit_code, and success
     def execute(command, timeout: nil)
       ensure_connected
 
-      result = {
-        stdout: '',
-        stderr: '',
-        exit_code: nil,
-        success: false
-      }
-
+      result = initialize_result
       timeout ||= Kdeploy.configuration&.command_timeout || 300
 
       KdeployLogger.debug("Executing on #{@host}: #{command}")
-
-      channel = @session.open_channel do |ch|
-        ch.exec(command) do |ch, success|
-          unless success
-            result[:stderr] = 'Failed to execute command'
-            result[:exit_code] = 1
-            return result
-          end
-
-          ch.on_data do |_ch, data|
-            result[:stdout] += data
-          end
-
-          ch.on_extended_data do |_ch, _type, data|
-            result[:stderr] += data
-          end
-
-          ch.on_request('exit-status') do |_ch, data|
-            result[:exit_code] = data.read_long
-          end
-        end
-      end
-
-      channel.wait
-
-      result[:success] = result[:exit_code]&.zero? || false
-
+      execute_command(command, result)
       KdeployLogger.debug("Command completed on #{@host}: exit_code=#{result[:exit_code]}")
 
       result
     rescue Net::SSH::Exception => e
-      KdeployLogger.error("SSH execution error on #{@host}: #{e.message}")
-      {
-        stdout: '',
-        stderr: e.message,
-        exit_code: 1,
-        success: false
-      }
+      handle_execution_error(e)
     end
 
     # Upload file to remote host
@@ -103,14 +58,11 @@ module Kdeploy
       ensure_connected
 
       KdeployLogger.debug("Uploading #{local_path} to #{@host}:#{remote_path}")
-
-      @session.scp.upload!(local_path, remote_path)
-
+      perform_upload(local_path, remote_path)
       KdeployLogger.debug("Upload completed: #{local_path} -> #{@host}:#{remote_path}")
       true
     rescue Net::SCP::Error => e
-      KdeployLogger.error("Upload failed #{local_path} -> #{@host}:#{remote_path}: #{e.message}")
-      false
+      handle_upload_error(e, local_path, remote_path)
     end
 
     # Download file from remote host
@@ -121,14 +73,11 @@ module Kdeploy
       ensure_connected
 
       KdeployLogger.debug("Downloading #{@host}:#{remote_path} to #{local_path}")
-
-      @session.scp.download!(remote_path, local_path)
-
+      perform_download(remote_path, local_path)
       KdeployLogger.debug("Download completed: #{@host}:#{remote_path} -> #{local_path}")
       true
     rescue Net::SCP::Error => e
-      KdeployLogger.error("Download failed #{@host}:#{remote_path} -> #{local_path}: #{e.message}")
-      false
+      handle_download_error(e, remote_path, local_path)
     end
 
     # Close SSH connection
@@ -148,9 +97,91 @@ module Kdeploy
 
     private
 
+    def establish_connection
+      @session = Net::SSH.start(
+        @host.hostname,
+        @host.user,
+        port: @host.port,
+        **@host.connection_options
+      )
+      @connected = true
+    end
+
+    def handle_connection_error(error)
+      KdeployLogger.error("Failed to connect to #{@host}: #{error.message}")
+      raise ConnectionError, "Failed to connect to #{@host}: #{error.message}"
+    end
+
     def ensure_connected
       connect unless connected?
       raise ConnectionError, "Not connected to #{@host}" unless connected?
+    end
+
+    def initialize_result
+      {
+        stdout: '',
+        stderr: '',
+        exit_code: nil,
+        success: false
+      }
+    end
+
+    def execute_command(command, result)
+      channel = create_command_channel(command, result)
+      channel.wait
+      result[:success] = result[:exit_code]&.zero? || false
+    end
+
+    def create_command_channel(command, result)
+      @session.open_channel do |ch|
+        ch.exec(command) do |ch, success|
+          handle_command_execution(ch, success, result)
+        end
+      end
+    end
+
+    def handle_command_execution(channel, success, result)
+      unless success
+        result[:stderr] = 'Failed to execute command'
+        result[:exit_code] = 1
+        return
+      end
+
+      setup_command_callbacks(channel, result)
+    end
+
+    def setup_command_callbacks(channel, result)
+      channel.on_data { |_ch, data| result[:stdout] += data }
+      channel.on_extended_data { |_ch, _type, data| result[:stderr] += data }
+      channel.on_request('exit-status') { |_ch, data| result[:exit_code] = data.read_long }
+    end
+
+    def handle_execution_error(error)
+      KdeployLogger.error("SSH execution error on #{@host}: #{error.message}")
+      {
+        stdout: '',
+        stderr: error.message,
+        exit_code: 1,
+        success: false
+      }
+    end
+
+    def perform_upload(local_path, remote_path)
+      @session.scp.upload!(local_path, remote_path)
+    end
+
+    def handle_upload_error(error, local_path, remote_path)
+      KdeployLogger.error("Upload failed #{local_path} -> #{@host}:#{remote_path}: #{error.message}")
+      false
+    end
+
+    def perform_download(remote_path, local_path)
+      @session.scp.download!(remote_path, local_path)
+    end
+
+    def handle_download_error(error, remote_path, local_path)
+      KdeployLogger.error("Download failed #{@host}:#{remote_path} -> #{local_path}: #{error.message}")
+      false
     end
   end
 end

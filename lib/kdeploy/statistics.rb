@@ -1,8 +1,5 @@
 # frozen_string_literal: true
 
-require 'json'
-require 'fileutils'
-
 module Kdeploy
   # Handles deployment statistics collection and analysis
   class Statistics
@@ -248,22 +245,22 @@ module Kdeploy
     end
 
     def build_top_failed_tasks(tasks, limit)
-      failure_counts = calculate_failure_counts(tasks, limit)
-      failure_counts.map do |task_name, count|
+      failure_counts = calculate_failure_counts(tasks)
+      failure_counts.take(limit).map do |task_name, count|
+        last_failure = find_last_failure(tasks, task_name)
         {
-          task_name: task_name,
+          name: task_name,
           failure_count: count,
-          last_failure: find_last_failure(tasks, task_name)
+          last_failure_time: Time.at(last_failure[:timestamp]).utc,
+          last_failure_duration: last_failure[:duration].round(2)
         }
       end
     end
 
-    def calculate_failure_counts(tasks, limit)
+    def calculate_failure_counts(tasks)
       tasks.group_by { |t| t[:name] }
         .transform_values(&:size)
         .sort_by { |_, count| -count }
-        .first(limit)
-        .to_h
     end
 
     def find_last_failure(tasks, task_name)
@@ -283,7 +280,7 @@ module Kdeploy
 
     def group_by_day(deployments)
       deployments.group_by do |d|
-        Time.at(d[:timestamp]).strftime('%Y-%m-%d')
+        Time.at(d[:timestamp]).utc.to_date
       end
     end
 
@@ -297,7 +294,8 @@ module Kdeploy
           successful: successful,
           failed: deployments.size - successful,
           success_rate: calculate_success_rate(successful, deployments.size),
-          avg_duration: calculate_average(durations)
+          avg_duration: calculate_average(durations),
+          total_duration: durations.sum.round(2)
         }
       end
     end
@@ -312,7 +310,7 @@ module Kdeploy
 
     def empty_summary
       {
-        period_days: 30,
+        period_days: 0,
         total_deployments: 0,
         successful_deployments: 0,
         failed_deployments: 0,
@@ -395,11 +393,10 @@ module Kdeploy
 
     def export_deployments_to_csv(csv)
       csv << ['Deployments']
-      csv << ['Timestamp', 'Success', 'Duration', 'Tasks Count', 'Success Count',
-              'Pipeline Name', 'Hosts Count']
+      csv << %w[Timestamp Success Duration TasksCount SuccessCount PipelineName HostsCount]
       @data[:deployments].each do |d|
         csv << [
-          Time.at(d[:timestamp]).strftime('%Y-%m-%d %H:%M:%S'),
+          Time.at(d[:timestamp]).utc,
           d[:success],
           d[:duration],
           d[:tasks_count],
@@ -412,11 +409,10 @@ module Kdeploy
 
     def export_tasks_to_csv(csv)
       csv << ['Tasks']
-      csv << ['Timestamp', 'Name', 'Success', 'Duration', 'Hosts Count',
-              'Success Count']
+      csv << %w[Timestamp Name Success Duration HostsCount SuccessCount]
       @data[:tasks].each do |t|
         csv << [
-          Time.at(t[:timestamp]).strftime('%Y-%m-%d %H:%M:%S'),
+          Time.at(t[:timestamp]).utc,
           t[:name],
           t[:success],
           t[:duration],
@@ -431,7 +427,7 @@ module Kdeploy
       csv << %w[Timestamp Name Host Success Duration]
       @data[:commands].each do |c|
         csv << [
-          Time.at(c[:timestamp]).strftime('%Y-%m-%d %H:%M:%S'),
+          Time.at(c[:timestamp]).utc,
           c[:name],
           c[:host],
           c[:success],

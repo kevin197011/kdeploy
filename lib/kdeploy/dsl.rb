@@ -33,6 +33,7 @@ module Kdeploy
     # @param roles [Array] Host roles
     # @param vars [Hash] Host variables
     # @param ssh_options [Hash] SSH connection options
+    # @return [Host] Created host
     def host(hostname, user: nil, port: nil, roles: [], vars: {}, **ssh_options)
       @pipeline.add_host(
         hostname,
@@ -59,6 +60,151 @@ module Kdeploy
       return unless File.exist?(resolved_path)
 
       load_inventory(resolved_path)
+    end
+
+    # Initialize template manager
+    # @param template_dir [String] Template directory path
+    def template_dir(template_dir = nil)
+      template_dir ||= default_template_dir
+      resolved_path = resolve_template_path(template_dir)
+
+      @template_manager = TemplateManager.new(resolved_path, @pipeline.variables)
+      KdeployLogger.info("Template directory set to: #{resolved_path}")
+    end
+
+    # Get or initialize template manager
+    # @return [TemplateManager] Template manager instance
+    def template_manager
+      @template_manager ||= begin
+        dir = default_template_dir
+        resolved_path = resolve_template_path(dir)
+        TemplateManager.new(resolved_path, @pipeline.variables)
+      end
+    end
+
+    # Define task
+    # @param name [String] Task name
+    # @param on [Array, Symbol] Target hosts or roles
+    # @param parallel [Boolean] Execute in parallel
+    # @param fail_fast [Boolean] Stop on first failure
+    # @param max_concurrent [Integer] Maximum concurrent executions
+    # @return [Task] Created task
+    def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &block)
+      target_hosts = resolve_target_hosts(on)
+
+      @current_task = @pipeline.add_task(
+        name,
+        hosts: target_hosts,
+        parallel: parallel,
+        fail_fast: fail_fast,
+        max_concurrent: max_concurrent
+      )
+
+      instance_eval(&block) if block
+      @current_task = nil
+    end
+
+    # Execute command in current task
+    # @param command [String] Command to execute (supports heredoc)
+    # @param name [String] Command name (optional)
+    # @param timeout [Integer] Command timeout
+    # @param retry_count [Integer] Number of retries
+    # @param retry_delay [Integer] Delay between retries
+    # @param ignore_errors [Boolean] Continue on error
+    # @param only [Array, Symbol] Run only on specified roles
+    # @param except [Array, Symbol] Skip specified roles
+    # @return [Array<Command>] Created commands
+    def run(command, name: nil, timeout: nil, retry_count: nil, retry_delay: nil,
+            ignore_errors: false, only: nil, except: nil)
+      raise 'run can only be called within a task block' unless @current_task
+
+      process_commands(command, name).each_with_object([]) do |(cmd_name, cmd), commands|
+        commands << add_command_to_task(
+          cmd_name, cmd, timeout, retry_count, retry_delay,
+          ignore_errors, only, except
+        )
+      end
+    end
+
+    # Execute local command
+    # @param command [String] Local command to execute
+    # @param name [String] Command name (optional)
+    # @return [Array<Hash>] Command results
+    def local(command, name: nil)
+      require 'open3'
+
+      process_commands(command, name).map do |cmd_name, cmd|
+        execute_local_command(cmd, cmd_name)
+      end
+    end
+
+    # Upload file to remote host
+    # @param local_path [String] Local file path
+    # @param remote_path [String] Remote file path
+    # @param name [String] Command name (optional)
+    # @return [Command] Created upload command
+    def upload(local_path, remote_path, name: nil)
+      raise 'upload can only be called within a task block' unless @current_task
+
+      ensure_remote_directory(remote_path)
+      command_name = name || "upload_#{File.basename(local_path)}"
+      add_upload_command(local_path, remote_path, command_name)
+    end
+
+    # Upload template to remote host
+    # @param template_name [String] Template name
+    # @param remote_path [String] Remote file path
+    # @param variables [Hash] Template variables
+    # @param name [String] Command name (optional)
+    # @return [Command] Created template upload command
+    def upload_template(template_name, remote_path, variables: {}, name: nil)
+      raise 'upload_template can only be called within a task block' unless @current_task
+
+      ensure_remote_directory(remote_path)
+      command_name = name || "upload_template_#{File.basename(template_name)}"
+      add_template_upload_command(template_name, remote_path, variables, command_name)
+    end
+
+    # Download file from remote host
+    # @param remote_path [String] Remote file path
+    # @param local_path [String] Local file path
+    # @param name [String] Command name (optional)
+    # @return [Command] Created download command
+    def download(remote_path, local_path, name: nil)
+      raise 'download can only be called within a task block' unless @current_task
+
+      command_name = name || "download_#{File.basename(remote_path)}"
+      add_download_command(remote_path, local_path, command_name)
+    end
+
+    # Get hosts by role
+    # @param role [String, Symbol] Role to filter by
+    # @return [Array<Host>] Hosts with specified role
+    def role(role)
+      @pipeline.hosts_with_role(role)
+    end
+
+    # Conditional execution
+    # @param condition [Boolean] Condition to check
+    # @yield Block to execute if condition is true
+    def when(condition, &)
+      instance_eval(&) if condition && block_given?
+    end
+
+    # Inverse conditional execution
+    # @param condition [Boolean] Condition to check
+    # @yield Block to execute if condition is false
+    def unless(condition, &)
+      instance_eval(&) if !condition && block_given?
+    end
+
+    # Include external script
+    # @param script_path [String] Path to script file
+    def include(script_path)
+      return unless File.exist?(script_path)
+
+      script_content = File.read(script_path)
+      instance_eval(script_content, script_path)
     end
 
     private
@@ -98,20 +244,6 @@ module Kdeploy
       )
     end
 
-    public
-
-    # Initialize template manager
-    # @param template_dir [String] Template directory path
-    def template_dir(template_dir = nil)
-      template_dir ||= default_template_dir
-      resolved_path = resolve_template_path(template_dir)
-
-      @template_manager = TemplateManager.new(resolved_path, @pipeline.variables)
-      KdeployLogger.info("Template directory set to: #{resolved_path}")
-    end
-
-    private
-
     def default_template_dir
       Kdeploy.configuration&.template_dir || 'templates'
     end
@@ -121,60 +253,6 @@ module Kdeploy
 
       File.join(@script_dir, template_dir)
     end
-
-    public
-
-    # Get or initialize template manager
-    # @return [TemplateManager] Template manager instance
-    def template_manager
-      @template_manager ||= begin
-        dir = default_template_dir
-        resolved_path = resolve_template_path(dir)
-        TemplateManager.new(resolved_path, @pipeline.variables)
-      end
-    end
-
-    # Define task
-    # @param name [String] Task name
-    # @param on [Array, Symbol] Target hosts or roles
-    # @param parallel [Boolean] Execute in parallel
-    # @param fail_fast [Boolean] Stop on first failure
-    # @param max_concurrent [Integer] Maximum concurrent executions
-    def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &block)
-      target_hosts = resolve_target_hosts(on)
-
-      @current_task = @pipeline.add_task(
-        name,
-        hosts: target_hosts,
-        parallel: parallel,
-        fail_fast: fail_fast,
-        max_concurrent: max_concurrent
-      )
-
-      instance_eval(&block) if block
-      @current_task = nil
-    end
-
-    # Execute command in current task
-    # @param command [String] Command to execute (supports heredoc)
-    # @param name [String] Command name (optional)
-    # @param timeout [Integer] Command timeout
-    # @param retry_count [Integer] Number of retries
-    # @param retry_delay [Integer] Delay between retries
-    # @param ignore_errors [Boolean] Continue on error
-    # @param only [Array, Symbol] Run only on specified roles
-    # @param except [Array, Symbol] Skip specified roles
-    def run(command, name: nil, timeout: nil, retry_count: nil, retry_delay: nil,
-            ignore_errors: false, only: nil, except: nil)
-      raise 'run can only be called within a task block' unless @current_task
-
-      process_commands(command, name).each do |cmd_name, cmd|
-        add_command_to_task(cmd_name, cmd, timeout, retry_count, retry_delay,
-                            ignore_errors, only, except)
-      end
-    end
-
-    private
 
     def process_commands(command, base_name)
       commands = process_heredoc_command(command)
@@ -207,21 +285,6 @@ module Kdeploy
       )
     end
 
-    public
-
-    # Execute local command
-    # @param command [String] Local command to execute
-    # @param name [String] Command name (optional)
-    def local(command, name: nil)
-      require 'open3'
-
-      process_commands(command, name).each do |cmd_name, cmd|
-        execute_local_command(cmd, cmd_name)
-      end
-    end
-
-    private
-
     def execute_local_command(cmd, name)
       processed_cmd = process_local_command_variables(cmd)
       start_time = Time.now
@@ -251,60 +314,40 @@ module Kdeploy
         log_local_command_success(name, duration, stdout)
       else
         log_local_command_failure(name, duration, exit_code, stdout, stderr)
-        raise "Local command '#{name}' failed"
       end
+
+      {
+        name: name,
+        success: exit_code.zero?,
+        duration: duration,
+        exit_code: exit_code,
+        stdout: stdout,
+        stderr: stderr
+      }
     end
 
     def log_local_command_success(name, duration, stdout)
       KdeployLogger.info("✅ Local command '#{name}' completed in #{duration.round(2)}s")
-      KdeployLogger.debug("Output: #{stdout}") unless stdout.empty?
+      KdeployLogger.debug("Output: #{stdout}") unless stdout.strip.empty?
     end
 
     def log_local_command_failure(name, duration, exit_code, stdout, stderr)
       KdeployLogger.error("❌ Local command '#{name}' failed in #{duration.round(2)}s (exit code: #{exit_code})")
-      KdeployLogger.error("Output: #{stdout}") unless stdout.empty?
-      KdeployLogger.error("Error: #{stderr}") unless stderr.empty?
-    end
-
-    # Upload file to hosts
-    # @param local_path [String] Local file path
-    # @param remote_path [String] Remote file path
-    # @param name [String] Command name (optional)
-    def upload(local_path, remote_path, name: nil)
-      raise 'upload can only be called within a task block' unless @current_task
-
-      command_name = name || "upload #{File.basename(local_path)}"
-      ensure_remote_directory(remote_path)
-      add_upload_command(local_path, remote_path, command_name)
+      KdeployLogger.error("STDERR: #{stderr}") unless stderr.empty?
+      KdeployLogger.error("STDOUT: #{stdout}") unless stdout.strip.empty?
     end
 
     def ensure_remote_directory(remote_path)
       run("mkdir -p #{File.dirname(remote_path)}", name: 'create directory')
     end
 
-    def add_upload_command(local_path, remote_path, command_name)
+    def add_upload_command(local_path, remote_path, _command_name)
       upload_command = UploadCommand.new(local_path, remote_path, @pipeline.variables)
-      upload_command.instance_variable_set(:@name, command_name)
       @current_task.commands << upload_command
+      upload_command
     end
 
-    public
-
-    # Upload template file with variable substitution
-    # @param template_name [String] Template name (without .erb extension)
-    # @param remote_path [String] Remote file path
-    # @param variables [Hash] Template variables
-    # @param name [String] Command name (optional)
-    def upload_template(template_name, remote_path, variables: {}, name: nil)
-      raise 'upload_template can only be called within a task block' unless @current_task
-
-      command_name = name || "upload_template #{template_name}"
-      add_template_upload_command(template_name, remote_path, variables, command_name)
-    end
-
-    private
-
-    def add_template_upload_command(template_name, remote_path, variables, command_name)
+    def add_template_upload_command(template_name, remote_path, variables, _command_name)
       command = TemplateUploadCommand.new(
         template_name,
         remote_path,
@@ -312,89 +355,40 @@ module Kdeploy
         template_manager,
         @pipeline.variables
       )
-      command.instance_variable_set(:@name, command_name)
       @current_task.commands << command
+      command
     end
 
-    public
-
-    # Download file from hosts
-    # @param remote_path [String] Remote file path
-    # @param local_path [String] Local file path
-    # @param name [String] Command name (optional)
-    def download(remote_path, local_path, name: nil)
-      raise 'download can only be called within a task block' unless @current_task
-
-      command_name = name || "download #{File.basename(remote_path)}"
-      add_download_command(remote_path, local_path, command_name)
-    end
-
-    private
-
-    def add_download_command(remote_path, local_path, command_name)
+    def add_download_command(remote_path, local_path, _command_name)
       command = DownloadCommand.new(remote_path, local_path, @pipeline.variables)
-      command.instance_variable_set(:@name, command_name)
       @current_task.commands << command
+      command
     end
 
-    # Define role-based host group
-    # @param role [Symbol] Role name
-    # @return [Array<Host>] Hosts with specified role
-    def role(role)
-      @pipeline.hosts_with_role(role)
-    end
-
-    # Conditional execution
-    # @param condition [Boolean] Condition to check
-    def when(condition, &)
-      instance_eval(&) if condition && block_given?
-    end
-
-    # Execute block unless condition is true
-    # @param condition [Boolean] Condition to check
-    def unless(condition, &)
-      instance_eval(&) if !condition && block_given?
-    end
-
-    # Include another deployment script
-    # @param script_path [String] Path to script file
-    def include(script_path)
-      return unless File.exist?(script_path)
-
-      KdeployLogger.debug("Including script: #{script_path}")
-      script_content = File.read(script_path)
-      instance_eval(script_content, script_path)
-    end
-
-    # Resolve target hosts from various formats
     def resolve_target_hosts(target)
       return @pipeline.hosts if target.nil?
 
-      targets = Array(target)
-      hosts = targets.flat_map { |t| resolve_single_target(t) }
-      hosts.uniq
+      Array(target).flat_map { |t| resolve_single_target(t) }.uniq
     end
 
     def resolve_single_target(target)
       case target
       when Host
-        [target]
+        target
       when Symbol
         @pipeline.hosts_with_role(target)
       when String
-        resolve_host_by_name(target)
+        resolve_host_by_name(target) || @pipeline.hosts_with_role(target.to_sym)
       when Array
         target.flat_map { |t| resolve_single_target(t) }
       else
-        raise ArgumentError, "Invalid target type: #{target.class}"
+        []
       end
     end
 
     def resolve_host_by_name(name)
       host = @pipeline.hosts.find { |h| h.hostname == name }
-      raise "Host not found: #{name}" unless host
-
-      [host]
+      [host] if host
     end
 
     def process_heredoc_command(command)
@@ -567,7 +561,6 @@ module Kdeploy
       duration = Time.now - start_time
       KdeployLogger.error("❌ Failed to upload template #{@template_name} to #{host.hostname}:#{@remote_path} in #{duration.round(2)}s")
       KdeployLogger.error("Error: #{error.message}")
-      cleanup_temp_file(@temp_file) if defined?(@temp_file) && File.exist?(@temp_file)
     end
   end
 end

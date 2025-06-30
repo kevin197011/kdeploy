@@ -1,10 +1,15 @@
 # frozen_string_literal: true
 
 module Kdeploy
+  # Custom logger class for Kdeploy with colorized output
   class KdeployLogger
     class << self
       attr_accessor :instance
 
+      # Set up logger instance with specified level and output file
+      # @param level [Symbol] Log level (:debug, :info, :warn, :error, :fatal)
+      # @param file [String, IO] Output file or IO stream
+      # @return [KdeployLogger] Logger instance
       def setup(level: :info, file: nil)
         @instance = new(level: level, file: file)
       end
@@ -23,37 +28,52 @@ module Kdeploy
       end
     end
 
+    # Initialize logger with specified level and output file
+    # @param level [Symbol] Log level (:debug, :info, :warn, :error, :fatal)
+    # @param file [String, IO] Output file or IO stream
     def initialize(level: :info, file: nil)
       @logger = Logger.new(file || $stdout)
       @logger.level = logger_level(level)
-      @logger.formatter = proc do |severity, datetime, _progname, msg|
-        timestamp = datetime.strftime('%Y-%m-%d %H:%M:%S')
-        colored_msg = colorize_message(severity, msg)
-        "[#{timestamp}] #{severity}: #{colored_msg}\n"
-      end
+      @logger.formatter = method(:format_message)
     end
 
+    # Log debug message
+    # @param message [String] Message to log
     def debug(message)
       @logger.debug(message)
     end
 
+    # Log info message
+    # @param message [String] Message to log
     def info(message)
       @logger.info(message)
     end
 
+    # Log warning message
+    # @param message [String] Message to log
     def warn(message)
       @logger.warn(message)
     end
 
+    # Log error message
+    # @param message [String] Message to log
     def error(message)
       @logger.error(message)
     end
 
+    # Log fatal message
+    # @param message [String] Message to log
     def fatal(message)
       @logger.fatal(message)
     end
 
     private
+
+    def format_message(severity, datetime, _progname, msg)
+      timestamp = datetime.strftime('%Y-%m-%d %H:%M:%S')
+      colored_msg = colorize_message(severity, msg)
+      "[#{timestamp}] #{severity}: #{colored_msg}\n"
+    end
 
     def logger_level(level)
       case level.to_sym

@@ -1,9 +1,5 @@
 # frozen_string_literal: true
 
-require 'thor'
-require 'tty-prompt'
-require 'colorize'
-
 # Add String truncate method if not available
 class String
   def truncate(length)
@@ -279,16 +275,7 @@ module Kdeploy
     end
 
     def show_kdeploy_banner
-      banner = <<~BANNER
-        ╔═══════════════════════════════════════════════════════════════════════════╗
-        ║                                                                           ║
-        ║                              K D E P L O Y                                ║
-        ║                                                                           ║
-        ║                     Deployment Automation Framework                       ║
-        ║                                                                           ║
-        ╚═══════════════════════════════════════════════════════════════════════════╝
-      BANNER
-      puts banner.colorize(:light_blue)
+      Banner.show
     end
 
     def info(message)
