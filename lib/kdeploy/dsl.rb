@@ -99,7 +99,7 @@ module Kdeploy
     # @param parallel [Boolean] Execute in parallel
     # @param fail_fast [Boolean] Stop on first failure
     # @param max_concurrent [Integer] Maximum concurrent executions
-    def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &block)
+    def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &)
       target_hosts = resolve_target_hosts(on)
 
       @current_task = @pipeline.add_task(
@@ -110,7 +110,7 @@ module Kdeploy
         max_concurrent: max_concurrent
       )
 
-      instance_eval(&block) if block_given?
+      instance_eval(&) if block_given?
       @current_task = nil
     end
 
@@ -243,14 +243,14 @@ module Kdeploy
 
     # Conditional execution
     # @param condition [Boolean] Condition to check
-    def when(condition, &block)
-      instance_eval(&block) if condition && block_given?
+    def when(condition, &)
+      instance_eval(&) if condition && block_given?
     end
 
     # Execute block unless condition is true
     # @param condition [Boolean] Condition to check
-    def unless(condition, &block)
-      instance_eval(&block) if !condition && block_given?
+    def unless(condition, &)
+      instance_eval(&) if !condition && block_given?
     end
 
     # Include another deployment script

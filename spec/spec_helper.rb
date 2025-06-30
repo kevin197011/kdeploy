@@ -49,7 +49,7 @@ RSpec.configure do |config|
 end
 
 # Helper method to create test host
-def create_test_host(hostname = 'test.example.com', **options)
+def create_test_host(hostname = 'test.example.com', **)
   defaults = {
     user: 'testuser',
     port: 22,
@@ -57,7 +57,7 @@ def create_test_host(hostname = 'test.example.com', **options)
     vars: {}
   }
 
-  Kdeploy::Host.new(hostname, **defaults, **options)
+  Kdeploy::Host.new(hostname, **defaults, **)
 end
 
 # Helper method to create test pipeline
