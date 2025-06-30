@@ -784,8 +784,8 @@ module Kdeploy
 
           task :cleanup_temp do
             run <<~BASH
-              find /tmp -name "#{app_name}-*" -mtime +1 -exec rm -rf {} \\;
-              find /var/tmp -name "#{app_name}-*" -mtime +1 -exec rm -rf {} \\;
+              find /tmp -name "${app_name}-*" -mtime +1 -exec rm -rf {} \\;
+              find /var/tmp -name "${app_name}-*" -mtime +1 -exec rm -rf {} \\;
             BASH
           end
 
