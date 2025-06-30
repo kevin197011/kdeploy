@@ -1,8 +1,10 @@
 #compdef kdeploy
 
 _kdeploy() {
-    local -a commands options
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
 
+    local -a commands
     commands=(
         'init:Initialize a new deployment project'
         'execute:Execute deployment tasks from file'
@@ -10,24 +12,25 @@ _kdeploy() {
         'version:Show version information'
     )
 
+    local -a options
     options=(
         '--dry-run[Show what would be done without executing]'
         '--limit[Limit to specific hosts (comma-separated)]'
         '--parallel[Number of parallel executions (default: 5)]'
     )
 
-    _arguments -C \
-        '1: :->cmds' \
-        '*:: :->args'
+    _arguments \
+        '1: :->command' \
+        '*: :->args'
 
-    case "$state" in
-        cmds)
+    case $state in
+        command)
             _describe -t commands 'kdeploy commands' commands
             ;;
         args)
-            case $words[1] in
+            case $words[2] in
                 execute)
-                    if (( CURRENT == 2 )); then
+                    if [[ $CURRENT -eq 3 ]]; then
                         _files -g "*.rb"
                     else
                         _values 'options' $options
@@ -44,4 +47,4 @@ _kdeploy() {
     esac
 }
 
-_kdeploy "$@"
+compdef _kdeploy kdeploy
