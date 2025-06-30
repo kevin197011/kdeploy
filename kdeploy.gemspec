@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description = 'Kdeploy is a Ruby-based deployment automation tool that provides agentless remote deployment solutions with an elegant DSL'
   spec.homepage = 'https://github.com/kevin197011/kdeploy'
   spec.license = 'MIT'
-  spec.required_ruby_version = '>= 3.2.0'
+  spec.required_ruby_version = '>= 3.1.0'
 
   spec.metadata = {
     'homepage_uri' => 'https://github.com/kevin197011/kdeploy',
@@ -45,6 +45,22 @@ Gem::Specification.new do |spec|
   spec.add_development_dependency 'rake', '~> 13.0'
   spec.add_development_dependency 'rspec', '~> 3.0'
   spec.add_development_dependency 'rubocop', '~> 1.21'
+
+  # Post install message
+  spec.post_install_message = <<~MESSAGE
+    🎉 Thanks for installing kdeploy!
+
+    To enable command completion, add the following to your shell config:
+
+    For Bash (~/.bashrc):
+      source "$(gem contents kdeploy | grep kdeploy.bash)"
+
+    For Zsh (~/.zshrc):
+      source "$(gem contents kdeploy | grep kdeploy.zsh)"
+      autoload -Uz compinit && compinit
+
+    Happy deploying! 🚀
+  MESSAGE
 
   # For more information and examples about making a new gem, check out our
   # guide at: https://bundler.io/guides/creating_gem.html

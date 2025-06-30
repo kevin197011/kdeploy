@@ -47,6 +47,30 @@ Or install it yourself as:
 $ gem install kdeploy
 ```
 
+### Shell Completion
+
+To enable command completion, add the following to your shell config:
+
+For Bash (`~/.bashrc`):
+```bash
+source "$(gem contents kdeploy | grep kdeploy.bash)"
+```
+
+For Zsh (`~/.zshrc`):
+```bash
+source "$(gem contents kdeploy | grep kdeploy.zsh)"
+autoload -Uz compinit && compinit
+```
+
+After adding the configuration:
+1. For Bash: `source ~/.bashrc`
+2. For Zsh: `source ~/.zshrc`
+
+Now you can use Tab completion for:
+- Commands: `kdeploy [TAB]`
+- File paths: `kdeploy execute [TAB]`
+- Options: `kdeploy execute deploy.rb [TAB]`
+
 ## 🚀 Quick Start
 
 1. Initialize a new project:
