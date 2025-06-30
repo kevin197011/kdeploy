@@ -2,6 +2,7 @@
 
 require 'thor'
 require 'tty-prompt'
+require 'colorize'
 
 # Add String truncate method if not available
 class String
@@ -13,48 +14,41 @@ class String
 end
 
 module Kdeploy
+  # Command Line Interface for kdeploy
   class CLI < Thor
     # Fix Thor deprecation warning
     def self.exit_on_failure?
       true
     end
+
+    # Common options for commands that execute scripts
+    SCRIPT_OPTIONS = {
+      config: { aliases: '-c', desc: 'Configuration file path' },
+      inventory: { aliases: '-i', desc: 'Inventory file path' },
+      dry_run: { aliases: '-d', type: :boolean, desc: 'Perform dry run without executing' },
+      verbose: { aliases: '-v', type: :boolean, desc: 'Enable verbose output' },
+      log_file: { aliases: '-l', desc: 'Log file path' }
+    }.freeze
+
     desc 'execute SCRIPT', 'Execute deployment script'
-    option :config, aliases: '-c', desc: 'Configuration file path'
-    option :inventory, aliases: '-i', desc: 'Inventory file path'
-    option :dry_run, aliases: '-d', type: :boolean, desc: 'Perform dry run without executing'
-    option :verbose, aliases: '-v', type: :boolean, desc: 'Enable verbose output'
-    option :log_file, aliases: '-l', desc: 'Log file path'
+    SCRIPT_OPTIONS.each { |name, opts| option(name, opts) }
     def execute(script_file)
       setup_configuration
       setup_logging
 
-      unless File.exist?(script_file)
-        error "Script file not found: #{script_file}"
-        exit 1
-      end
+      validate_script_file(script_file)
 
       begin
-        if options[:dry_run]
-          perform_dry_run(script_file)
-        else
-          execute_script(script_file)
-        end
+        options[:dry_run] ? perform_dry_run(script_file) : execute_script(script_file)
       rescue Kdeploy::Error => e
-        error "Deployment failed: #{e.message}"
-        exit 1
+        handle_deployment_error(e)
       rescue StandardError => e
-        error "Unexpected error: #{e.message}"
-        KdeployLogger.debug("Backtrace: #{e.backtrace.join("\n")}")
-        exit 1
+        handle_unexpected_error(e)
       end
     end
 
     desc 'deploy SCRIPT', 'Execute deployment script (alias for execute)'
-    option :config, aliases: '-c', desc: 'Configuration file path'
-    option :inventory, aliases: '-i', desc: 'Inventory file path'
-    option :dry_run, aliases: '-d', type: :boolean, desc: 'Perform dry run without executing'
-    option :verbose, aliases: '-v', type: :boolean, desc: 'Enable verbose output'
-    option :log_file, aliases: '-l', desc: 'Log file path'
+    SCRIPT_OPTIONS.each { |name, opts| option(name, opts) }
     def deploy(script_file)
       execute(script_file)
     end
@@ -63,54 +57,12 @@ module Kdeploy
     option :name, aliases: '-n', desc: 'Specify project name'
     def init(project_name = nil)
       show_kdeploy_banner
-      project_name ||= options[:name] || File.basename(Dir.pwd)
+      project_name = determine_project_name(project_name)
 
-      puts ''
-      puts "🆕 Initializing kdeploy project: #{project_name}".colorize(:yellow)
-      puts ''
-
+      display_init_header(project_name)
       create_project_structure(project_name)
       create_sample_files(project_name)
-
-      puts ''
-      puts '✅ Project initialized successfully!'.colorize(:green)
-      puts ''
-      puts '📁 Project Structure Created:'.colorize(:cyan)
-      puts "  #{project_name}/".colorize(:light_blue)
-      puts '  ├── deploy.rb           # Main deployment script'.colorize(:light_blue)
-      puts '  ├── inventory.yml       # Server inventory'.colorize(:light_blue)
-      puts '  ├── config/             # Configuration files'.colorize(:light_blue)
-      puts '  │   └── kdeploy.yml     # Deployment configuration'.colorize(:light_blue)
-      puts '  ├── scripts/            # Additional scripts'.colorize(:light_blue)
-      puts '  │   ├── setup.rb        # Server setup script'.colorize(:light_blue)
-      puts '  │   ├── database.rb     # Database management'.colorize(:light_blue)
-      puts '  │   ├── backup.rb       # Backup operations'.colorize(:light_blue)
-      puts '  │   ├── monitoring.rb   # Health checks & monitoring'.colorize(:light_blue)
-      puts '  │   ├── rollback.rb     # Rollback operations'.colorize(:light_blue)
-      puts '  │   └── cleanup.rb      # Cleanup operations'.colorize(:light_blue)
-      puts '  └── templates/          # Configuration templates'.colorize(:light_blue)
-      puts '      ├── nginx.conf.erb  # Nginx configuration'.colorize(:light_blue)
-      puts '      ├── app.service.erb # Systemd service'.colorize(:light_blue)
-      puts '      ├── deploy.sh.erb   # Deployment script'.colorize(:light_blue)
-      puts '      └── backup.sh.erb   # Backup script'.colorize(:light_blue)
-      puts ''
-      puts '🚀 Next Steps:'.colorize(:cyan)
-      puts "  1. cd #{project_name}".colorize(:light_blue)
-      puts '  2. Edit deploy.rb to configure your deployment'.colorize(:light_blue)
-      puts '  3. Update inventory.yml with your servers'.colorize(:light_blue)
-      puts '  4. Run: kdeploy deploy scripts/setup.rb        # Setup servers'.colorize(:light_blue)
-      puts '  5. Run: kdeploy deploy deploy.rb               # Deploy application'.colorize(:light_blue)
-      puts ''
-      puts '💡 Available Scripts:'.colorize(:cyan)
-      puts '  kdeploy deploy scripts/setup.rb      # Initial server setup'.colorize(:light_blue)
-      puts '  kdeploy deploy scripts/database.rb   # Database operations'.colorize(:light_blue)
-      puts '  kdeploy deploy scripts/backup.rb     # Backup operations'.colorize(:light_blue)
-      puts '  kdeploy deploy scripts/monitoring.rb # Health checks'.colorize(:light_blue)
-      puts '  kdeploy deploy scripts/rollback.rb   # Rollback operations'.colorize(:light_blue)
-      puts '  kdeploy deploy scripts/cleanup.rb    # Cleanup operations'.colorize(:light_blue)
-      puts ''
-      puts '💡 Need help? Run: kdeploy help deploy'.colorize(:yellow)
-      puts ''
+      display_init_success(project_name)
     end
 
     desc 'validate SCRIPT', 'Validate deployment script'
@@ -120,54 +72,20 @@ module Kdeploy
       show_kdeploy_banner
       setup_configuration
 
-      puts ''
-      puts "🔍 Validating deployment script: #{script_file}".colorize(:yellow)
-      puts ''
-
-      unless File.exist?(script_file)
-        error "❌ Script file not found: #{script_file}"
-        exit 1
-      end
+      display_validation_header(script_file)
+      validate_script_file(script_file)
 
       begin
         pipeline = Kdeploy.load_script(script_file)
         validation_errors = pipeline.validate
 
         if validation_errors.empty?
-          puts '✅ Script validation passed'.colorize(:green)
-          puts ''
-          puts '📋 Pipeline Summary:'.colorize(:cyan)
-          puts "  Name: #{pipeline.name}".colorize(:light_blue)
-          puts "  Hosts: #{pipeline.hosts.size}".colorize(:light_blue)
-          puts "  Tasks: #{pipeline.tasks.size}".colorize(:light_blue)
-
-          if pipeline.hosts.any?
-            puts ''
-            puts '🖥️  Target Hosts:'.colorize(:cyan)
-            pipeline.hosts.each do |host|
-              puts "  • #{host.hostname}:#{host.port} (#{host.user})".colorize(:light_blue)
-            end
-          end
-
-          if pipeline.tasks.any?
-            puts ''
-            puts '🔧 Tasks to Execute:'.colorize(:cyan)
-            pipeline.tasks.each_with_index do |task, index|
-              puts "  #{index + 1}. #{task.name}".colorize(:light_blue)
-            end
-          end
-          puts ''
+          display_validation_success(pipeline)
         else
-          puts '❌ Script validation failed:'.colorize(:red)
-          puts ''
-          validation_errors.each { |err| puts "  • #{err}".colorize(:red) }
-          puts ''
-          exit 1
+          display_validation_errors(validation_errors)
         end
       rescue Kdeploy::Error => e
-        puts "❌ Validation failed: #{e.message}".colorize(:red)
-        puts ''
-        exit 1
+        display_validation_failure(e)
       end
     end
 
@@ -1780,6 +1698,140 @@ module Kdeploy
 
       File.write("#{project_name}/templates/backup.sh.erb", backup_template)
       info "Created template: #{project_name}/templates/backup.sh.erb"
+    end
+
+    def determine_project_name(project_name)
+      project_name || options[:name] || File.basename(Dir.pwd)
+    end
+
+    def display_init_header(project_name)
+      puts ''
+      puts "🆕 Initializing kdeploy project: #{project_name}".colorize(:yellow)
+      puts ''
+    end
+
+    def display_init_success(project_name)
+      puts ''
+      puts '✅ Project initialized successfully!'.colorize(:green)
+      puts ''
+      display_project_structure(project_name)
+      display_next_steps(project_name)
+      display_available_scripts
+    end
+
+    def display_project_structure(project_name)
+      puts '📁 Project Structure Created:'.colorize(:cyan)
+      puts "  #{project_name}/".colorize(:light_blue)
+      puts '  ├── deploy.rb           # Main deployment script'.colorize(:light_blue)
+      puts '  ├── inventory.yml       # Server inventory'.colorize(:light_blue)
+      puts '  ├── config/             # Configuration files'.colorize(:light_blue)
+      puts '  │   └── kdeploy.yml     # Deployment configuration'.colorize(:light_blue)
+      puts '  ├── scripts/            # Additional scripts'.colorize(:light_blue)
+      puts '  │   ├── setup.rb        # Server setup script'.colorize(:light_blue)
+      puts '  │   ├── database.rb     # Database management'.colorize(:light_blue)
+      puts '  │   ├── backup.rb       # Backup operations'.colorize(:light_blue)
+      puts '  │   ├── monitoring.rb   # Health checks & monitoring'.colorize(:light_blue)
+      puts '  │   ├── rollback.rb     # Rollback operations'.colorize(:light_blue)
+      puts '  │   └── cleanup.rb      # Cleanup operations'.colorize(:light_blue)
+      puts '  └── templates/          # Configuration templates'.colorize(:light_blue)
+      puts '      ├── nginx.conf.erb  # Nginx configuration'.colorize(:light_blue)
+      puts '      ├── app.service.erb # Systemd service'.colorize(:light_blue)
+      puts '      ├── deploy.sh.erb   # Deployment script'.colorize(:light_blue)
+      puts '      └── backup.sh.erb   # Backup script'.colorize(:light_blue)
+      puts ''
+    end
+
+    def display_next_steps(project_name)
+      puts '🚀 Next Steps:'.colorize(:cyan)
+      puts "  1. cd #{project_name}".colorize(:light_blue)
+      puts '  2. Edit deploy.rb to configure your deployment'.colorize(:light_blue)
+      puts '  3. Update inventory.yml with your servers'.colorize(:light_blue)
+      puts '  4. Run: kdeploy deploy scripts/setup.rb        # Setup servers'.colorize(:light_blue)
+      puts '  5. Run: kdeploy deploy deploy.rb               # Deploy application'.colorize(:light_blue)
+      puts ''
+    end
+
+    def display_available_scripts
+      puts '💡 Available Scripts:'.colorize(:cyan)
+      puts '  kdeploy deploy scripts/setup.rb      # Initial server setup'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/database.rb   # Database operations'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/backup.rb     # Backup operations'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/monitoring.rb # Health checks'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/rollback.rb   # Rollback operations'.colorize(:light_blue)
+      puts '  kdeploy deploy scripts/cleanup.rb    # Cleanup operations'.colorize(:light_blue)
+      puts ''
+      puts '💡 Need help? Run: kdeploy help deploy'.colorize(:yellow)
+      puts ''
+    end
+
+    def validate_script_file(script_file)
+      return if File.exist?(script_file)
+
+      error "Script file not found: #{script_file}"
+      exit 1
+    end
+
+    def display_validation_header(script_file)
+      puts ''
+      puts "🔍 Validating deployment script: #{script_file}".colorize(:yellow)
+      puts ''
+    end
+
+    def display_validation_success(pipeline)
+      puts '✅ Script validation passed'.colorize(:green)
+      puts ''
+      display_pipeline_summary(pipeline)
+      display_target_hosts(pipeline.hosts) if pipeline.hosts.any?
+      display_tasks(pipeline.tasks) if pipeline.tasks.any?
+      puts ''
+    end
+
+    def display_pipeline_summary(pipeline)
+      puts '📋 Pipeline Summary:'.colorize(:cyan)
+      puts "  Name: #{pipeline.name}".colorize(:light_blue)
+      puts "  Hosts: #{pipeline.hosts.size}".colorize(:light_blue)
+      puts "  Tasks: #{pipeline.tasks.size}".colorize(:light_blue)
+    end
+
+    def display_target_hosts(hosts)
+      puts ''
+      puts '🖥️  Target Hosts:'.colorize(:cyan)
+      hosts.each do |host|
+        puts "  • #{host.hostname}:#{host.port} (#{host.user})".colorize(:light_blue)
+      end
+    end
+
+    def display_tasks(tasks)
+      puts ''
+      puts '🔧 Tasks to Execute:'.colorize(:cyan)
+      tasks.each_with_index do |task, index|
+        puts "  #{index + 1}. #{task.name}".colorize(:light_blue)
+      end
+    end
+
+    def display_validation_errors(errors)
+      puts '❌ Script validation failed:'.colorize(:red)
+      puts ''
+      errors.each { |err| puts "  • #{err}".colorize(:red) }
+      puts ''
+      exit 1
+    end
+
+    def display_validation_failure(error)
+      puts "❌ Validation failed: #{error.message}".colorize(:red)
+      puts ''
+      exit 1
+    end
+
+    def handle_deployment_error(error)
+      error "Deployment failed: #{error.message}"
+      exit 1
+    end
+
+    def handle_unexpected_error(error)
+      error "Unexpected error: #{error.message}"
+      KdeployLogger.debug("Backtrace: #{error.backtrace.join("\n")}")
+      exit 1
     end
   end
 end

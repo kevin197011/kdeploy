@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 module Kdeploy
+  # Domain Specific Language for deployment scripts
   class DSL
     def initialize(script_dir = nil)
       @pipeline = Pipeline.new
@@ -33,7 +34,14 @@ module Kdeploy
     # @param vars [Hash] Host variables
     # @param ssh_options [Hash] SSH connection options
     def host(hostname, user: nil, port: nil, roles: [], vars: {}, **ssh_options)
-      @pipeline.add_host(hostname, user: user, port: port, roles: roles, vars: vars, ssh_options: ssh_options)
+      @pipeline.add_host(
+        hostname,
+        user: user,
+        port: port,
+        roles: roles,
+        vars: vars,
+        ssh_options: ssh_options
+      )
     end
 
     # Define multiple hosts
@@ -45,51 +53,84 @@ module Kdeploy
     # Load hosts from inventory file
     # @param inventory_file [String] Path to inventory file
     def inventory(inventory_file = nil)
-      inventory_file ||= Kdeploy.configuration&.inventory_file || 'inventory.yml'
+      inventory_file ||= default_inventory_file
+      resolved_path = resolve_inventory_path(inventory_file)
 
-      # Resolve relative path to script directory
-      inventory_file = File.join(@script_dir, inventory_file) unless File.absolute_path?(inventory_file)
+      return unless File.exist?(resolved_path)
 
-      unless File.exist?(inventory_file)
-        KdeployLogger.warn("Inventory file not found: #{inventory_file}")
-        return
-      end
+      load_inventory(resolved_path)
+    end
 
+    private
+
+    def default_inventory_file
+      Kdeploy.configuration&.inventory_file || 'inventory.yml'
+    end
+
+    def resolve_inventory_path(inventory_file)
+      return inventory_file if File.absolute_path?(inventory_file)
+
+      File.join(@script_dir, inventory_file)
+    end
+
+    def load_inventory(inventory_file)
       @inventory = Inventory.new(inventory_file)
+      add_inventory_hosts
+      set_inventory_variables
+      log_inventory_loaded(inventory_file)
+    end
 
-      # Add all hosts from inventory to pipeline
+    def add_inventory_hosts
       @inventory.all_hosts.each do |host|
         @pipeline.hosts << host unless @pipeline.hosts.include?(host)
       end
+    end
 
-      # Set global variables from inventory
+    def set_inventory_variables
       @inventory.vars.each do |key, value|
         @pipeline.set_variable(key, value)
       end
-
-      KdeployLogger.info("Loaded #{@inventory.hosts.size} hosts from inventory: #{inventory_file}")
     end
+
+    def log_inventory_loaded(inventory_file)
+      KdeployLogger.info(
+        "Loaded #{@inventory.hosts.size} hosts from inventory: #{inventory_file}"
+      )
+    end
+
+    public
 
     # Initialize template manager
     # @param template_dir [String] Template directory path
     def template_dir(template_dir = nil)
-      template_dir ||= Kdeploy.configuration&.template_dir || 'templates'
+      template_dir ||= default_template_dir
+      resolved_path = resolve_template_path(template_dir)
 
-      # Resolve relative path to script directory
-      template_dir = File.join(@script_dir, template_dir) unless File.absolute_path?(template_dir)
-
-      @template_manager = TemplateManager.new(template_dir, @pipeline.variables)
-
-      KdeployLogger.info("Template directory set to: #{template_dir}")
+      @template_manager = TemplateManager.new(resolved_path, @pipeline.variables)
+      KdeployLogger.info("Template directory set to: #{resolved_path}")
     end
+
+    private
+
+    def default_template_dir
+      Kdeploy.configuration&.template_dir || 'templates'
+    end
+
+    def resolve_template_path(template_dir)
+      return template_dir if File.absolute_path?(template_dir)
+
+      File.join(@script_dir, template_dir)
+    end
+
+    public
 
     # Get or initialize template manager
     # @return [TemplateManager] Template manager instance
     def template_manager
       @template_manager ||= begin
-        template_dir = Kdeploy.configuration&.template_dir || 'templates'
-        template_dir = File.join(@script_dir, template_dir) unless File.absolute_path?(template_dir)
-        TemplateManager.new(template_dir, @pipeline.variables)
+        dir = default_template_dir
+        resolved_path = resolve_template_path(dir)
+        TemplateManager.new(resolved_path, @pipeline.variables)
       end
     end
 
@@ -99,7 +140,7 @@ module Kdeploy
     # @param parallel [Boolean] Execute in parallel
     # @param fail_fast [Boolean] Stop on first failure
     # @param max_concurrent [Integer] Maximum concurrent executions
-    def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &)
+    def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &block)
       target_hosts = resolve_target_hosts(on)
 
       @current_task = @pipeline.add_task(
@@ -110,12 +151,11 @@ module Kdeploy
         max_concurrent: max_concurrent
       )
 
-      instance_eval(&) if block_given?
+      instance_eval(&block) if block
       @current_task = nil
     end
 
     # Execute command in current task
-    # Supports both single line commands and heredoc syntax
     # @param command [String] Command to execute (supports heredoc)
     # @param name [String] Command name (optional)
     # @param timeout [Integer] Command timeout
@@ -128,31 +168,46 @@ module Kdeploy
             ignore_errors: false, only: nil, except: nil)
       raise 'run can only be called within a task block' unless @current_task
 
-      # Process heredoc commands - split multi-line commands into separate commands
-      processed_commands = process_heredoc_command(command)
-
-      processed_commands.each_with_index do |cmd, index|
-        cmd = cmd.strip
-        next if cmd.empty? || cmd.start_with?('#') # Skip empty lines and comments
-
-        command_name = if processed_commands.size > 1
-                         name ? "#{name}_#{index + 1}" : "#{cmd.split.first || 'unnamed'}_#{index + 1}"
-                       else
-                         name || cmd.split.first || 'unnamed'
-                       end
-
-        @current_task.add_command(
-          command_name,
-          cmd,
-          timeout: timeout,
-          retry_count: retry_count,
-          retry_delay: retry_delay,
-          ignore_errors: ignore_errors,
-          only: only,
-          except: except
-        )
+      process_commands(command, name).each do |cmd_name, cmd|
+        add_command_to_task(cmd_name, cmd, timeout, retry_count, retry_delay,
+                            ignore_errors, only, except)
       end
     end
+
+    private
+
+    def process_commands(command, base_name)
+      commands = process_heredoc_command(command)
+      commands.each_with_index.map do |cmd, index|
+        cmd = cmd.strip
+        next if cmd.empty? || cmd.start_with?('#')
+
+        [generate_command_name(cmd, base_name, index, commands.size), cmd]
+      end.compact
+    end
+
+    def generate_command_name(cmd, base_name, index, total)
+      return base_name if base_name && total == 1
+
+      prefix = base_name || (cmd.split.first || 'unnamed')
+      total > 1 ? "#{prefix}_#{index + 1}" : prefix
+    end
+
+    def add_command_to_task(name, cmd, timeout, retry_count, retry_delay,
+                            ignore_errors, only, except)
+      @current_task.add_command(
+        name,
+        cmd,
+        timeout: timeout,
+        retry_count: retry_count,
+        retry_delay: retry_delay,
+        ignore_errors: ignore_errors,
+        only: only,
+        except: except
+      )
+    end
+
+    public
 
     # Execute local command
     # @param command [String] Local command to execute
@@ -160,8 +215,55 @@ module Kdeploy
     def local(command, name: nil)
       require 'open3'
 
-      processed_commands = process_heredoc_command(command)
-      processed_commands.each_with_index { |cmd, index| execute_local_command(cmd, name, index, processed_commands.size) }
+      process_commands(command, name).each do |cmd_name, cmd|
+        execute_local_command(cmd, cmd_name)
+      end
+    end
+
+    private
+
+    def execute_local_command(cmd, name)
+      processed_cmd = process_local_command_variables(cmd)
+      start_time = Time.now
+
+      log_local_command_start(name, processed_cmd)
+      stdout, stderr, status = Open3.capture3(processed_cmd)
+      duration = Time.now - start_time
+
+      handle_local_command_result(name, duration, status.exitstatus, stdout, stderr)
+    end
+
+    def process_local_command_variables(cmd)
+      processed_cmd = cmd.dup
+      @pipeline.variables.each do |key, value|
+        processed_cmd.gsub!(/\$\{#{key}\}/, value.to_s)
+      end
+      processed_cmd
+    end
+
+    def log_local_command_start(name, cmd)
+      KdeployLogger.info("🚀 Executing local command '#{name}'")
+      KdeployLogger.debug("Command: #{cmd}")
+    end
+
+    def handle_local_command_result(name, duration, exit_code, stdout, stderr)
+      if exit_code.zero?
+        log_local_command_success(name, duration, stdout)
+      else
+        log_local_command_failure(name, duration, exit_code, stdout, stderr)
+        raise "Local command '#{name}' failed"
+      end
+    end
+
+    def log_local_command_success(name, duration, stdout)
+      KdeployLogger.info("✅ Local command '#{name}' completed in #{duration.round(2)}s")
+      KdeployLogger.debug("Output: #{stdout}") unless stdout.empty?
+    end
+
+    def log_local_command_failure(name, duration, exit_code, stdout, stderr)
+      KdeployLogger.error("❌ Local command '#{name}' failed in #{duration.round(2)}s (exit code: #{exit_code})")
+      KdeployLogger.error("Output: #{stdout}") unless stdout.empty?
+      KdeployLogger.error("Error: #{stderr}") unless stderr.empty?
     end
 
     # Upload file to hosts
@@ -172,15 +274,21 @@ module Kdeploy
       raise 'upload can only be called within a task block' unless @current_task
 
       command_name = name || "upload #{File.basename(local_path)}"
+      ensure_remote_directory(remote_path)
+      add_upload_command(local_path, remote_path, command_name)
+    end
 
-      # Add mkdir command first
+    def ensure_remote_directory(remote_path)
       run("mkdir -p #{File.dirname(remote_path)}", name: 'create directory')
+    end
 
-      # Add upload command with global variables
+    def add_upload_command(local_path, remote_path, command_name)
       upload_command = UploadCommand.new(local_path, remote_path, @pipeline.variables)
       upload_command.instance_variable_set(:@name, command_name)
       @current_task.commands << upload_command
     end
+
+    public
 
     # Upload template file with variable substitution
     # @param template_name [String] Template name (without .erb extension)
@@ -191,33 +299,24 @@ module Kdeploy
       raise 'upload_template can only be called within a task block' unless @current_task
 
       command_name = name || "upload_template #{template_name}"
-
-      # Add template upload command with global variables
-      template_command = TemplateUploadCommand.new(template_name, remote_path, variables, template_manager, @pipeline.variables)
-      template_command.instance_variable_set(:@name, command_name)
-      @current_task.commands << template_command
+      add_template_upload_command(template_name, remote_path, variables, command_name)
     end
 
-    # Render template to string
-    # @param template_name [String] Template name
-    # @param variables [Hash] Template variables
-    # @return [String] Rendered template content
-    def render_template(template_name, variables = {})
-      template_manager.render(template_name, variables)
+    private
+
+    def add_template_upload_command(template_name, remote_path, variables, command_name)
+      command = TemplateUploadCommand.new(
+        template_name,
+        remote_path,
+        variables,
+        template_manager,
+        @pipeline.variables
+      )
+      command.instance_variable_set(:@name, command_name)
+      @current_task.commands << command
     end
 
-    # Execute rendered template as script
-    # @param template_name [String] Template name
-    # @param variables [Hash] Template variables
-    # @param name [String] Command name (optional)
-    def run_template(template_name, variables: {}, name: nil)
-      raise 'run_template can only be called within a task block' unless @current_task
-
-      rendered_script = template_manager.render(template_name, variables)
-      command_name = name || "run_template #{template_name}"
-
-      run(rendered_script, name: command_name)
-    end
+    public
 
     # Download file from hosts
     # @param remote_path [String] Remote file path
@@ -227,11 +326,15 @@ module Kdeploy
       raise 'download can only be called within a task block' unless @current_task
 
       command_name = name || "download #{File.basename(remote_path)}"
+      add_download_command(remote_path, local_path, command_name)
+    end
 
-      # Add download command with global variables
-      download_command = DownloadCommand.new(remote_path, local_path, @pipeline.variables)
-      download_command.instance_variable_set(:@name, command_name)
-      @current_task.commands << download_command
+    private
+
+    def add_download_command(remote_path, local_path, command_name)
+      command = DownloadCommand.new(remote_path, local_path, @pipeline.variables)
+      command.instance_variable_set(:@name, command_name)
+      @current_task.commands << command
     end
 
     # Define role-based host group
@@ -263,266 +366,133 @@ module Kdeploy
       instance_eval(script_content, script_path)
     end
 
-    private
-
-    # Execute a single local command
-    # @param cmd [String] Command to execute
-    # @param name [String] Base command name
-    # @param index [Integer] Command index
-    # @param total_commands [Integer] Total number of commands
-    def execute_local_command(cmd, name, index, total_commands)
-      require 'open3'
-
-      cmd = cmd.strip
-      return if cmd.empty? || cmd.start_with?('#') # Skip empty lines and comments
-
-      command_name = generate_local_command_name(cmd, name, index, total_commands)
-      processed_cmd = process_local_command_variables(cmd)
-
-      log_local_command_start(command_name, processed_cmd)
-
-      start_time = Time.now
-      stdout, stderr, status = Open3.capture3(processed_cmd)
-      duration = Time.now - start_time
-
-      if status.success?
-        log_local_command_success(command_name, duration, stdout)
-      else
-        log_local_command_failure(command_name, duration, status.exitstatus, stdout, stderr)
-        raise CommandError, "Local command failed: #{cmd}"
-      end
-    end
-
-    # Generate command name for local execution
-    def generate_local_command_name(cmd, name, index, total_commands)
-      return name || "local: #{cmd.split.first || 'script'}" if total_commands == 1
-
-      name ? "#{name}_#{index + 1}" : "local: #{cmd.split.first || 'script'}_#{index + 1}"
-    end
-
-    # Process template variables in local command
-    def process_local_command_variables(cmd)
-      processed_cmd = cmd.dup
-      @pipeline.variables.each do |key, value|
-        processed_cmd = processed_cmd.gsub("{{#{key}}}", value.to_s)
-        processed_cmd = processed_cmd.gsub("${#{key}}", value.to_s)
-      end
-      processed_cmd
-    end
-
-    # Log local command execution start
-    def log_local_command_start(command_name, processed_cmd)
-      KdeployLogger.info("🚀 Executing local command '#{command_name}'")
-      KdeployLogger.debug("   Command: #{processed_cmd}")
-    end
-
-    # Log successful local command completion
-    def log_local_command_success(command_name, duration, stdout)
-      KdeployLogger.info("✅ Local command '#{command_name}' completed in #{duration.round(2)}s")
-      return if stdout.strip.empty?
-
-      KdeployLogger.info('📤 Output:')
-      stdout.strip.split("\n").each { |line| KdeployLogger.info("   #{line}") }
-    end
-
-    # Log failed local command
-    def log_local_command_failure(command_name, duration, exit_code, stdout, stderr)
-      KdeployLogger.error("❌ Local command '#{command_name}' failed in #{duration.round(2)}s (exit code: #{exit_code})")
-      KdeployLogger.error("📤 STDERR: #{stderr}") unless stderr.strip.empty?
-      KdeployLogger.error("📤 STDOUT: #{stdout}") unless stdout.strip.empty?
-    end
-
     # Resolve target hosts from various formats
-    # @param target [Array, Symbol, String, nil] Target specification
-    # @return [Array<Host>] Resolved hosts
     def resolve_target_hosts(target)
       return @pipeline.hosts if target.nil?
 
+      targets = Array(target)
+      hosts = targets.flat_map { |t| resolve_single_target(t) }
+      hosts.uniq
+    end
+
+    def resolve_single_target(target)
       case target
+      when Host
+        [target]
+      when Symbol
+        @pipeline.hosts_with_role(target)
+      when String
+        resolve_host_by_name(target)
       when Array
         target.flat_map { |t| resolve_single_target(t) }
       else
-        resolve_single_target(target)
+        raise ArgumentError, "Invalid target type: #{target.class}"
       end
     end
 
-    # Resolve single target specification
-    # @param target [Symbol, String] Single target specification
-    # @return [Array<Host>] Resolved hosts
-    def resolve_single_target(target)
-      case target
-      when Symbol
-        target_str = target.to_s
+    def resolve_host_by_name(name)
+      host = @pipeline.hosts.find { |h| h.hostname == name }
+      raise "Host not found: #{name}" unless host
 
-        # Try inventory groups first if available
-        if @inventory
-          inventory_hosts = @inventory.hosts_in_group(target_str)
-          return inventory_hosts unless inventory_hosts.empty?
-
-          # Try inventory roles
-          inventory_role_hosts = @inventory.hosts_with_role(target_str)
-          return inventory_role_hosts unless inventory_role_hosts.empty?
-        end
-
-        # Fallback to pipeline roles
-        @pipeline.hosts_with_role(target)
-      when String
-        # Try exact hostname match first
-        hosts_by_name = @pipeline.hosts.select { |h| h.hostname == target }
-        return hosts_by_name unless hosts_by_name.empty?
-
-        # Try inventory groups if available
-        if @inventory
-          inventory_hosts = @inventory.hosts_in_group(target)
-          return inventory_hosts unless inventory_hosts.empty?
-
-          # Try inventory roles
-          inventory_role_hosts = @inventory.hosts_with_role(target)
-          return inventory_role_hosts unless inventory_role_hosts.empty?
-        end
-
-        # Fallback to pipeline roles
-        @pipeline.hosts_with_role(target)
-      else
-        []
-      end
+      [host]
     end
 
-    # Process heredoc commands into individual command lines
-    # @param command [String] Command string (may contain multiple lines)
-    # @return [Array<String>] Array of individual commands
     def process_heredoc_command(command)
-      # Split by newlines and process each line
-      lines = command.split(/\r?\n/)
-
-      # If single line, return as is
-      return [command] if lines.size == 1
-
-      # Process multi-line heredoc
-      processed_lines = []
-
-      lines.each do |line|
-        line = line.strip
-
-        # Skip empty lines and comments
-        next if line.empty? || line.start_with?('#')
-
-        # Handle line continuation (backslash at end)
-        if line.end_with?('\\')
-          line = line[0..-2] # Remove backslash
-          if processed_lines.empty?
-            processed_lines << line
-          else
-            processed_lines[-1] += " #{line}"
-          end
-        elsif processed_lines.empty? || !processed_lines[-1].end_with?(' ')
-          processed_lines << line
-        else
-          processed_lines[-1] += line
-        end
-      end
-
-      processed_lines.empty? ? [command] : processed_lines
+      command.split(/\r?\n/)
     end
   end
 
-  # Special command class for file uploads
+  # Command class for file upload operations
   class UploadCommand < Command
     def initialize(local_path, remote_path, global_variables = {})
       @local_path = local_path
       @remote_path = remote_path
       @global_variables = global_variables
-      super('upload', "upload #{local_path} #{remote_path}")
+      super()
     end
 
     def execute(host, connection)
       start_time = Time.now
+      processed_path = process_remote_path(host)
 
-      # Process remote path template variables
-      processed_remote_path = @remote_path.dup
-      # Merge global variables with host variables
-      all_variables = @global_variables.merge(host.vars).merge(
-        hostname: host.hostname,
-        user: host.user,
-        port: host.port
-      )
-
-      all_variables.each do |key, value|
-        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
-        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
+      begin
+        connection.upload(@local_path, processed_path)
+        record_success(start_time, host)
+      rescue StandardError => e
+        record_failure(e, start_time, host)
+        raise
       end
+    end
 
-      KdeployLogger.info("Uploading '#{@local_path}' to #{host}:#{processed_remote_path}")
+    private
 
-      success = connection.upload(@local_path, processed_remote_path)
+    def process_remote_path(host)
+      path = @remote_path.dup
+      variables = @global_variables.merge(host.vars)
+      variables.each do |key, value|
+        path.gsub!(/\$\{#{key}\}/, value.to_s)
+      end
+      path
+    end
 
+    def record_success(start_time, host)
       duration = Time.now - start_time
-      @result = {
-        success: success,
-        duration: duration
-      }
+      KdeployLogger.info("✅ Uploaded #{@local_path} to #{host.hostname}:#{@remote_path} in #{duration.round(2)}s")
+    end
 
-      if success
-        KdeployLogger.info("Upload completed to #{host} in #{duration.round(2)}s")
-      else
-        KdeployLogger.error("Upload failed to #{host} after #{duration.round(2)}s")
-      end
-
-      success
+    def record_failure(error, start_time, host)
+      duration = Time.now - start_time
+      KdeployLogger.error("❌ Failed to upload #{@local_path} to #{host.hostname}:#{@remote_path} in #{duration.round(2)}s")
+      KdeployLogger.error("Error: #{error.message}")
     end
   end
 
-  # Special command class for file downloads
+  # Command class for file download operations
   class DownloadCommand < Command
     def initialize(remote_path, local_path, global_variables = {})
       @remote_path = remote_path
       @local_path = local_path
       @global_variables = global_variables
-      super('download', "download #{remote_path} #{local_path}")
+      super()
     end
 
     def execute(host, connection)
       start_time = Time.now
+      processed_path = process_remote_path(host)
 
-      # Process remote path template variables
-      processed_remote_path = @remote_path.dup
-      # Merge global variables with host variables
-      all_variables = @global_variables.merge(host.vars).merge(
-        hostname: host.hostname,
-        user: host.user,
-        port: host.port
-      )
-
-      all_variables.each do |key, value|
-        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
-        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
+      begin
+        connection.download(processed_path, @local_path)
+        record_success(start_time, host)
+      rescue StandardError => e
+        record_failure(e, start_time, host)
+        raise
       end
+    end
 
-      # Create unique local path for each host
-      host_local_path = @local_path.sub(/(\.[^.]+)?$/) { "_#{host.hostname}#{::Regexp.last_match(1)}" }
+    private
 
-      KdeployLogger.info("Downloading '#{processed_remote_path}' from #{host} to #{host_local_path}")
+    def process_remote_path(host)
+      path = @remote_path.dup
+      variables = @global_variables.merge(host.vars)
+      variables.each do |key, value|
+        path.gsub!(/\$\{#{key}\}/, value.to_s)
+      end
+      path
+    end
 
-      success = connection.download(processed_remote_path, host_local_path)
-
+    def record_success(start_time, host)
       duration = Time.now - start_time
-      @result = {
-        success: success,
-        duration: duration,
-        local_path: host_local_path
-      }
+      KdeployLogger.info("✅ Downloaded #{host.hostname}:#{@remote_path} to #{@local_path} in #{duration.round(2)}s")
+    end
 
-      if success
-        KdeployLogger.info("Download completed from #{host} in #{duration.round(2)}s")
-      else
-        KdeployLogger.error("Download failed from #{host} after #{duration.round(2)}s")
-      end
-
-      success
+    def record_failure(error, start_time, host)
+      duration = Time.now - start_time
+      KdeployLogger.error("❌ Failed to download #{host.hostname}:#{@remote_path} to #{@local_path} in #{duration.round(2)}s")
+      KdeployLogger.error("Error: #{error.message}")
     end
   end
 
-  # Special command class for template uploads
+  # Command class for template upload operations
   class TemplateUploadCommand < Command
     def initialize(template_name, remote_path, variables, template_manager, global_variables = {})
       @template_name = template_name
@@ -530,54 +500,47 @@ module Kdeploy
       @variables = variables
       @template_manager = template_manager
       @global_variables = global_variables
-      super('upload_template', "upload_template #{template_name} #{remote_path}")
+      super()
     end
 
     def execute(host, connection)
       start_time = Time.now
-
       host_variables = build_host_variables(host)
-      processed_remote_path = process_remote_path_variables(host_variables)
-      success = perform_template_upload(host, connection, host_variables, processed_remote_path)
+      processed_path = process_remote_path_variables(host_variables)
 
-      record_execution_result(start_time, success, host)
-    rescue StandardError => e
-      log_upload_failure(e, start_time, host)
+      begin
+        perform_template_upload(host, connection, host_variables, processed_path)
+        record_success(start_time, host)
+      rescue StandardError => e
+        record_failure(e, start_time, host)
+        raise
+      end
     end
 
     private
 
     def build_host_variables(host)
-      # Merge variables in priority order: global < template < host < host_info
-      host_variables = @global_variables.merge(@variables).merge(
+      @global_variables.merge(@variables).merge(host.vars).merge(
         hostname: host.hostname,
         user: host.user,
         port: host.port
       )
-
-      # Add host custom variables (highest priority except for host info)
-      host.vars.each { |k, v| host_variables[k] = v }
-      host_variables
     end
 
     def process_remote_path_variables(host_variables)
-      processed_remote_path = @remote_path.dup
+      path = @remote_path.dup
       host_variables.each do |key, value|
-        processed_remote_path = processed_remote_path.gsub("{{#{key}}}", value.to_s)
-        processed_remote_path = processed_remote_path.gsub("${#{key}}", value.to_s)
+        path.gsub!(/\$\{#{key}\}/, value.to_s)
       end
-      processed_remote_path
+      path
     end
 
-    def perform_template_upload(host, connection, host_variables, processed_remote_path)
+    def perform_template_upload(_host, connection, host_variables, processed_path)
       rendered_content = @template_manager.render(@template_name, host_variables)
       temp_file = create_temp_file(rendered_content)
-
-      KdeployLogger.info("Uploading rendered template '#{@template_name}' to #{host}:#{processed_remote_path}")
-
-      success = upload_template_file(connection, temp_file, processed_remote_path)
-      cleanup_temp_file(temp_file)
-      success
+      upload_template_file(connection, temp_file, processed_path)
+    ensure
+      cleanup_temp_file(temp_file) if temp_file
     end
 
     def create_temp_file(content)
@@ -586,47 +549,25 @@ module Kdeploy
       temp_file
     end
 
-    def upload_template_file(connection, temp_file, processed_remote_path)
-      # Create remote directory first
-      connection.execute("mkdir -p #{File.dirname(processed_remote_path)}")
-      # Upload rendered template
-      connection.upload(temp_file, processed_remote_path)
+    def upload_template_file(connection, temp_file, processed_path)
+      connection.execute("mkdir -p #{File.dirname(processed_path)}")
+      connection.upload(temp_file, processed_path)
     end
 
     def cleanup_temp_file(temp_file)
       FileUtils.rm_f(temp_file)
     end
 
-    def record_execution_result(start_time, success, host)
+    def record_success(start_time, host)
       duration = Time.now - start_time
-      @result = {
-        success: success,
-        duration: duration,
-        template: @template_name
-      }
-
-      if success
-        KdeployLogger.info("Template upload completed to #{host} in #{duration.round(2)}s")
-      else
-        KdeployLogger.error("Template upload failed to #{host} after #{duration.round(2)}s")
-      end
-
-      success
+      KdeployLogger.info("✅ Uploaded template #{@template_name} to #{host.hostname}:#{@remote_path} in #{duration.round(2)}s")
     end
 
-    def log_upload_failure(error, start_time, host)
-      # Cleanup temporary file on error
-      cleanup_temp_file(@temp_file) if defined?(@temp_file) && File.exist?(@temp_file)
-
+    def record_failure(error, start_time, host)
       duration = Time.now - start_time
-      @result = {
-        success: false,
-        duration: duration,
-        error: error.message
-      }
-
-      KdeployLogger.error("Template upload failed to #{host}: #{error.message}")
-      false
+      KdeployLogger.error("❌ Failed to upload template #{@template_name} to #{host.hostname}:#{@remote_path} in #{duration.round(2)}s")
+      KdeployLogger.error("Error: #{error.message}")
+      cleanup_temp_file(@temp_file) if defined?(@temp_file) && File.exist?(@temp_file)
     end
   end
 end

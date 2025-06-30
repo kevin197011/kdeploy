@@ -4,11 +4,12 @@ require 'json'
 require 'fileutils'
 
 module Kdeploy
+  # Handles deployment statistics collection and analysis
   class Statistics
     attr_reader :data
 
     def initialize(stats_file: nil)
-      @stats_file = stats_file || File.join(Dir.home, '.kdeploy', 'statistics.json')
+      @stats_file = stats_file || default_stats_file
       @data = load_statistics
       @session_start_time = Time.now
     end
@@ -16,16 +17,7 @@ module Kdeploy
     # Record a deployment execution
     # @param result [Hash] Deployment result
     def record_deployment(result)
-      deployment_data = {
-        timestamp: Time.now.to_f,
-        success: result[:success],
-        duration: result[:duration],
-        tasks_count: result[:tasks_count] || 0,
-        success_count: result[:success_count] || 0,
-        pipeline_name: result[:pipeline_name] || 'unknown',
-        hosts_count: result[:hosts_count] || 0
-      }
-
+      deployment_data = build_deployment_data(result)
       @data[:deployments] << deployment_data
       update_global_stats(deployment_data)
       save_statistics
@@ -35,15 +27,7 @@ module Kdeploy
     # @param task_name [String] Task name
     # @param result [Hash] Task execution result
     def record_task(task_name, result)
-      task_data = {
-        timestamp: Time.now.to_f,
-        name: task_name,
-        success: result[:success],
-        duration: result[:duration],
-        hosts_count: result[:hosts_count] || 0,
-        success_count: result[:success_count] || 0
-      }
-
+      task_data = build_task_data(task_name, result)
       @data[:tasks] << task_data
       update_task_stats(task_data)
       save_statistics
@@ -55,14 +39,7 @@ module Kdeploy
     # @param success [Boolean] Execution success
     # @param duration [Float] Execution duration
     def record_command(command_name, host, success, duration)
-      command_data = {
-        timestamp: Time.now.to_f,
-        name: command_name,
-        host: host,
-        success: success,
-        duration: duration
-      }
-
+      command_data = build_command_data(command_name, host, success, duration)
       @data[:commands] << command_data
       update_command_stats(command_data)
       save_statistics
@@ -72,69 +49,24 @@ module Kdeploy
     # @param days [Integer] Number of days to include (default: 30)
     # @return [Hash] Statistics summary
     def deployment_summary(days: 30)
-      cutoff_time = Time.now - (days * 24 * 60 * 60)
-      recent_deployments = @data[:deployments].select { |d| d[:timestamp] >= cutoff_time.to_f }
+      cutoff_time = calculate_cutoff_time(days)
+      recent_deployments = filter_recent_data(@data[:deployments], cutoff_time)
 
       return empty_summary if recent_deployments.empty?
 
-      successful = recent_deployments.count { |d| d[:success] }
-      failed = recent_deployments.size - successful
-
-      durations = recent_deployments.map { |d| d[:duration] }
-
-      {
-        period_days: days,
-        total_deployments: recent_deployments.size,
-        successful_deployments: successful,
-        failed_deployments: failed,
-        success_rate: (successful.to_f / recent_deployments.size * 100).round(2),
-        avg_duration: (durations.sum / durations.size).round(2),
-        min_duration: durations.min&.round(2),
-        max_duration: durations.max&.round(2),
-        total_duration: durations.sum.round(2)
-      }
+      build_deployment_summary(recent_deployments, days)
     end
 
     # Get task statistics summary
     # @param days [Integer] Number of days to include (default: 30)
     # @return [Hash] Task statistics summary
     def task_summary(days: 30)
-      cutoff_time = Time.now - (days * 24 * 60 * 60)
-      recent_tasks = @data[:tasks].select { |t| t[:timestamp] >= cutoff_time.to_f }
+      cutoff_time = calculate_cutoff_time(days)
+      recent_tasks = filter_recent_data(@data[:tasks], cutoff_time)
 
-      if recent_tasks.empty?
-        return {
-          period_days: days,
-          total_task_executions: 0,
-          unique_tasks: 0,
-          tasks: {}
-        }
-      end
+      return empty_task_summary(days) if recent_tasks.empty?
 
-      task_groups = recent_tasks.group_by { |t| t[:name] }
-      task_stats = {}
-
-      task_groups.each do |task_name, tasks|
-        successful = tasks.count { |t| t[:success] }
-        failed = tasks.size - successful
-        durations = tasks.map { |t| t[:duration] }
-
-        task_stats[task_name] = {
-          total_executions: tasks.size,
-          successful: successful,
-          failed: failed,
-          success_rate: (successful.to_f / tasks.size * 100).round(2),
-          avg_duration: (durations.sum / durations.size).round(2),
-          total_duration: durations.sum.round(2)
-        }
-      end
-
-      {
-        period_days: days,
-        total_task_executions: recent_tasks.size,
-        unique_tasks: task_groups.size,
-        tasks: task_stats
-      }
+      build_task_summary(recent_tasks, days)
     end
 
     # Get global statistics
@@ -161,54 +93,22 @@ module Kdeploy
     # @param days [Integer] Number of days to include
     # @return [Array] Top failed tasks
     def top_failed_tasks(limit: 10, days: 30)
-      cutoff_time = Time.now - (days * 24 * 60 * 60)
-      recent_tasks = @data[:tasks].select { |t| t[:timestamp] >= cutoff_time.to_f && !t[:success] }
+      cutoff_time = calculate_cutoff_time(days)
+      recent_tasks = filter_recent_failed_tasks(cutoff_time)
 
-      failure_counts = recent_tasks.group_by { |t| t[:name] }
-        .transform_values(&:size)
-        .sort_by { |_, count| -count }
-        .first(limit)
-
-      failure_counts.map do |task_name, failures|
-        {
-          task_name: task_name,
-          failure_count: failures,
-          last_failure: recent_tasks.select { |t| t[:name] == task_name }.max_by { |t| t[:timestamp] }
-        }
-      end
+      build_top_failed_tasks(recent_tasks, limit)
     end
 
     # Get performance trends
     # @param days [Integer] Number of days to analyze
     # @return [Hash] Performance trends
     def performance_trends(days: 7)
-      cutoff_time = Time.now - (days * 24 * 60 * 60)
-      recent_deployments = @data[:deployments].select { |d| d[:timestamp] >= cutoff_time.to_f }
+      cutoff_time = calculate_cutoff_time(days)
+      recent_deployments = filter_recent_data(@data[:deployments], cutoff_time)
 
       return { period_days: days, trends: {} } if recent_deployments.empty?
 
-      # Group by day
-      daily_stats = recent_deployments.group_by do |d|
-        Time.at(d[:timestamp]).strftime('%Y-%m-%d')
-      end
-
-      trends = daily_stats.transform_values do |deployments|
-        successful = deployments.count { |d| d[:success] }
-        durations = deployments.map { |d| d[:duration] }
-
-        {
-          total: deployments.size,
-          successful: successful,
-          failed: deployments.size - successful,
-          success_rate: (successful.to_f / deployments.size * 100).round(2),
-          avg_duration: durations.empty? ? 0 : (durations.sum / durations.size).round(2)
-        }
-      end
-
-      {
-        period_days: days,
-        trends: trends.sort.to_h
-      }
+      build_performance_trends(recent_deployments, days)
     end
 
     # Clear all statistics
@@ -223,7 +123,7 @@ module Kdeploy
     def export_statistics(file_path, format: :json)
       case format
       when :json
-        File.write(file_path, JSON.pretty_generate(@data))
+        export_to_json(file_path)
       when :csv
         export_to_csv(file_path)
       else
@@ -232,6 +132,10 @@ module Kdeploy
     end
 
     private
+
+    def default_stats_file
+      File.join(Dir.home, '.kdeploy', 'statistics.json')
+    end
 
     def load_statistics
       return default_statistics_structure unless File.exist?(@stats_file)
@@ -248,7 +152,185 @@ module Kdeploy
       FileUtils.mkdir_p(File.dirname(@stats_file))
       File.write(@stats_file, JSON.pretty_generate(@data))
     rescue StandardError => e
-      KdeployLogger.warn("Failed to save statistics: #{e.message}")
+      KdeployLogger.error("Failed to save statistics: #{e.message}")
+    end
+
+    def build_deployment_data(result)
+      {
+        timestamp: Time.now.to_f,
+        success: result[:success],
+        duration: result[:duration],
+        tasks_count: result[:tasks_count] || 0,
+        success_count: result[:success_count] || 0,
+        pipeline_name: result[:pipeline_name] || 'unknown',
+        hosts_count: result[:hosts_count] || 0
+      }
+    end
+
+    def build_task_data(task_name, result)
+      {
+        timestamp: Time.now.to_f,
+        name: task_name,
+        success: result[:success],
+        duration: result[:duration],
+        hosts_count: result[:hosts_count] || 0,
+        success_count: result[:success_count] || 0
+      }
+    end
+
+    def build_command_data(command_name, host, success, duration)
+      {
+        timestamp: Time.now.to_f,
+        name: command_name,
+        host: host,
+        success: success,
+        duration: duration
+      }
+    end
+
+    def calculate_cutoff_time(days)
+      Time.now - (days * 24 * 60 * 60)
+    end
+
+    def filter_recent_data(data, cutoff_time)
+      data.select { |d| d[:timestamp] >= cutoff_time.to_f }
+    end
+
+    def filter_recent_failed_tasks(cutoff_time)
+      @data[:tasks].select { |t| t[:timestamp] >= cutoff_time.to_f && !t[:success] }
+    end
+
+    def build_deployment_summary(deployments, days)
+      successful = deployments.count { |d| d[:success] }
+      failed = deployments.size - successful
+      durations = deployments.map { |d| d[:duration] }
+
+      {
+        period_days: days,
+        total_deployments: deployments.size,
+        successful_deployments: successful,
+        failed_deployments: failed,
+        success_rate: calculate_success_rate(successful, deployments.size),
+        avg_duration: calculate_average(durations),
+        min_duration: durations.min&.round(2),
+        max_duration: durations.max&.round(2),
+        total_duration: durations.sum.round(2)
+      }
+    end
+
+    def build_task_summary(tasks, days)
+      task_groups = tasks.group_by { |t| t[:name] }
+      task_stats = build_task_group_stats(task_groups)
+
+      {
+        period_days: days,
+        total_task_executions: tasks.size,
+        unique_tasks: task_groups.size,
+        tasks: task_stats
+      }
+    end
+
+    def build_task_group_stats(task_groups)
+      task_groups.transform_values do |tasks|
+        successful = tasks.count { |t| t[:success] }
+        failed = tasks.size - successful
+        durations = tasks.map { |t| t[:duration] }
+
+        {
+          total_executions: tasks.size,
+          successful: successful,
+          failed: failed,
+          success_rate: calculate_success_rate(successful, tasks.size),
+          avg_duration: calculate_average(durations),
+          total_duration: durations.sum.round(2)
+        }
+      end
+    end
+
+    def build_top_failed_tasks(tasks, limit)
+      failure_counts = calculate_failure_counts(tasks, limit)
+      failure_counts.map do |task_name, failures|
+        {
+          task_name: task_name,
+          failure_count: failures,
+          last_failure: find_last_failure(tasks, task_name)
+        }
+      end
+    end
+
+    def calculate_failure_counts(tasks, limit)
+      tasks.group_by { |t| t[:name] }
+        .transform_values(&:size)
+        .sort_by { |_, count| -count }
+        .first(limit)
+        .to_h
+    end
+
+    def find_last_failure(tasks, task_name)
+      tasks.select { |t| t[:name] == task_name }
+        .max_by { |t| t[:timestamp] }
+    end
+
+    def build_performance_trends(deployments, days)
+      daily_stats = group_by_day(deployments)
+      trends = calculate_daily_trends(daily_stats)
+
+      {
+        period_days: days,
+        trends: trends.sort.to_h
+      }
+    end
+
+    def group_by_day(deployments)
+      deployments.group_by do |d|
+        Time.at(d[:timestamp]).strftime('%Y-%m-%d')
+      end
+    end
+
+    def calculate_daily_trends(daily_stats)
+      daily_stats.transform_values do |deployments|
+        successful = deployments.count { |d| d[:success] }
+        durations = deployments.map { |d| d[:duration] }
+
+        {
+          total: deployments.size,
+          successful: successful,
+          failed: deployments.size - successful,
+          success_rate: calculate_success_rate(successful, deployments.size),
+          avg_duration: calculate_average(durations)
+        }
+      end
+    end
+
+    def calculate_success_rate(successful, total)
+      (successful.to_f / total * 100).round(2)
+    end
+
+    def calculate_average(values)
+      values.empty? ? 0 : (values.sum / values.size).round(2)
+    end
+
+    def empty_summary
+      {
+        period_days: 0,
+        total_deployments: 0,
+        successful_deployments: 0,
+        failed_deployments: 0,
+        success_rate: 0,
+        avg_duration: 0,
+        min_duration: 0,
+        max_duration: 0,
+        total_duration: 0
+      }
+    end
+
+    def empty_task_summary(days)
+      {
+        period_days: days,
+        total_task_executions: 0,
+        unique_tasks: 0,
+        tasks: {}
+      }
     end
 
     def default_statistics_structure
@@ -293,42 +375,64 @@ module Kdeploy
       end
     end
 
-    def empty_summary
-      {
-        period_days: 0,
-        total_deployments: 0,
-        successful_deployments: 0,
-        failed_deployments: 0,
-        success_rate: 0.0,
-        avg_duration: 0.0,
-        min_duration: 0.0,
-        max_duration: 0.0,
-        total_duration: 0.0
-      }
+    def export_to_json(file_path)
+      File.write(file_path, JSON.pretty_generate(@data))
     end
 
     def export_to_csv(file_path)
       require 'csv'
 
       CSV.open(file_path, 'w') do |csv|
-        # Deployments
-        csv << %w[Type Timestamp Name Success Duration Tasks_Count Success_Count Hosts_Count]
-        @data[:deployments].each do |d|
-          csv << ['deployment', Time.at(d[:timestamp]), d[:pipeline_name], d[:success], d[:duration],
-                  d[:tasks_count], d[:success_count], d[:hosts_count]]
-        end
+        export_deployments_to_csv(csv)
+        export_tasks_to_csv(csv)
+        export_commands_to_csv(csv)
+      end
+    end
 
-        # Tasks
-        @data[:tasks].each do |t|
-          csv << ['task', Time.at(t[:timestamp]), t[:name], t[:success], t[:duration],
-                  nil, t[:success_count], t[:hosts_count]]
-        end
+    def export_deployments_to_csv(csv)
+      csv << ['Deployments']
+      csv << %w[Timestamp Success Duration TasksCount SuccessCount PipelineName HostsCount]
+      @data[:deployments].each do |d|
+        csv << [
+          Time.at(d[:timestamp]).iso8601,
+          d[:success],
+          d[:duration],
+          d[:tasks_count],
+          d[:success_count],
+          d[:pipeline_name],
+          d[:hosts_count]
+        ]
+      end
+      csv << []
+    end
 
-        # Commands
-        @data[:commands].each do |c|
-          csv << ['command', Time.at(c[:timestamp]), c[:name], c[:success], c[:duration],
-                  nil, nil, c[:host]]
-        end
+    def export_tasks_to_csv(csv)
+      csv << ['Tasks']
+      csv << %w[Timestamp Name Success Duration HostsCount SuccessCount]
+      @data[:tasks].each do |t|
+        csv << [
+          Time.at(t[:timestamp]).iso8601,
+          t[:name],
+          t[:success],
+          t[:duration],
+          t[:hosts_count],
+          t[:success_count]
+        ]
+      end
+      csv << []
+    end
+
+    def export_commands_to_csv(csv)
+      csv << ['Commands']
+      csv << %w[Timestamp Name Host Success Duration]
+      @data[:commands].each do |c|
+        csv << [
+          Time.at(c[:timestamp]).iso8601,
+          c[:name],
+          c[:host],
+          c[:success],
+          c[:duration]
+        ]
       end
     end
   end
