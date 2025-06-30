@@ -20,6 +20,11 @@ jobs:
       run: |
         sudo apt-get update
         sudo apt-get install -y rbenv ruby-build
+        # Update ruby-build definitions
+        sudo git -C /usr/lib/ruby/vendor_ruby/rbenv/plugins/ruby-build pull || \
+        sudo git -C /usr/share/ruby-build pull || \
+        sudo git -C /usr/local/share/ruby-build pull || \
+        echo "ruby-build update skipped"
 
     - name: Install Ruby 3.2.2 manually
       run: |
