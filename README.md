@@ -11,7 +11,6 @@
 ⚡ Lightweight Agentless Deployment Tool
 🚀 Deploy with confidence, scale with ease
 
-=====================================================================================================
 ```
 
 A lightweight agentless deployment automation tool written in Ruby.

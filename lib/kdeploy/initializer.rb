@@ -168,7 +168,6 @@ module Kdeploy
         ⚡ Lightweight Agentless Deployment Tool
         🚀 Deploy with confidence, scale with ease
 
-        =====================================================================================================
         ```
 
         This is a deployment project created with Kdeploy.
