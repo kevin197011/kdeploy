@@ -3,8 +3,7 @@
 require 'bundler/gem_tasks'
 require 'rspec/core/rake_task'
 require 'time'
-
-Kdeploy::VERSION = '0.1.0'
+require_relative 'lib/kdeploy/version'
 
 # Default task runs tests and RuboCop, then pushes code
 task default: %w[push]
