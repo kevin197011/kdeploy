@@ -6,10 +6,10 @@ module Kdeploy
 
     def initialize(hostname, user: nil, port: nil, ssh_options: {}, roles: [], vars: {})
       @hostname = hostname
-      @user = user || Kdeploy.configuration&.default_user || ENV.fetch('USER', nil)
+      @user = user || Kdeploy.configuration&.default_user || ENV.fetch('USER', 'root')
       @port = port || Kdeploy.configuration&.default_port || 22
-      @ssh_options = ssh_options
-      @roles = Array(roles)
+      @ssh_options = ssh_options || {}
+      @roles = Array(roles).map(&:to_s)
       @vars = vars || {}
     end
 
@@ -43,14 +43,29 @@ module Kdeploy
     # Get SSH connection options
     # @return [Hash] SSH options
     def connection_options
-      base_options = Kdeploy.configuration&.merged_ssh_options(@ssh_options) || @ssh_options
-      base_options.merge(
-        timeout: Kdeploy.configuration&.ssh_timeout || 30
-      )
+      options = @ssh_options.dup || {}
+
+      # Convert key_file to keys option
+      options[:keys] = [options.delete('key_file') || options.delete(:key_file)] if options['key_file'] || options[:key_file]
+
+      # Convert verify_host_key to verify_host_key option
+      if options.key?('verify_host_key') || options.key?(:verify_host_key)
+        verify = options.delete('verify_host_key') || options.delete(:verify_host_key)
+        options[:verify_host_key] = verify ? :always : :never
+      end
+
+      # Add default options
+      options[:timeout] = options['timeout'] || options[:timeout] || 10
+      options[:keepalive] = true
+      options[:keepalive_interval] = 30
+      options[:non_interactive] = true
+      options[:verify_host_key] = :never unless options.key?(:verify_host_key)
+
+      options
     end
 
     def to_s
-      connection_string
+      "#{@user}@#{@hostname}:#{@port}"
     end
 
     def inspect

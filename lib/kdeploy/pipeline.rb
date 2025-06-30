@@ -19,8 +19,21 @@ module Kdeploy
     # @param roles [Array] Host roles
     # @param vars [Hash] Host variables
     def add_host(hostname, user: nil, port: nil, ssh_options: {}, roles: [], vars: {})
-      host = Host.new(hostname, user: user, port: port, ssh_options: ssh_options, roles: roles, vars: vars)
-      @hosts << host unless @hosts.include?(host)
+      # Convert roles to array if it's a single value
+      roles = Array(roles)
+
+      # Create host object
+      host = Host.new(
+        hostname,
+        user: user || 'root',
+        port: port || 22,
+        ssh_options: ssh_options,
+        roles: roles,
+        vars: vars
+      )
+
+      # Add host if not already present
+      @hosts << host unless @hosts.any? { |h| h.hostname == host.hostname }
       host
     end
 
@@ -53,7 +66,17 @@ module Kdeploy
     # @param options [Hash] Task options
     # @return [Task] Created task
     def add_task(name, hosts: nil, **options)
-      target_hosts = hosts || @hosts
+      target_hosts = case hosts
+                     when Array
+                       hosts
+                     when Symbol
+                       hosts_with_role(hosts)
+                     when String
+                       hosts_with_role(hosts.to_sym)
+                     else
+                       @hosts
+                     end
+
       task = Task.new(name, target_hosts, options)
       # Set global variables from pipeline
       task.global_variables = @variables
@@ -66,6 +89,7 @@ module Kdeploy
     # @param value [Object] Variable value
     def set_variable(key, value)
       @variables[key.to_s] = value
+      @variables[key.to_sym] = value
     end
 
     # Get global variable

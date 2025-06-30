@@ -3,10 +3,11 @@
 module Kdeploy
   class DSL
     def initialize(script_dir = nil)
-      @pipeline = Pipeline.new
+      @pipeline = Pipeline.new('default')
       @current_task = nil
       @inventory = nil
       @script_dir = script_dir || Dir.pwd
+      @template_dir = nil
       @template_manager = nil
     end
 
@@ -19,7 +20,7 @@ module Kdeploy
     end
 
     # Set global variable
-    # @param key [String, Symbol] Variable key
+    # @param key [String] Variable key
     # @param value [Object] Variable value
     def set(key, value)
       @pipeline.set_variable(key, value)
@@ -59,28 +60,37 @@ module Kdeploy
 
       # Add all hosts from inventory to pipeline
       @inventory.all_hosts.each do |host|
-        @pipeline.hosts << host unless @pipeline.hosts.include?(host)
+        @pipeline.add_host(
+          host.hostname,
+          user: host.user,
+          port: host.port,
+          roles: host.roles,
+          vars: host.vars,
+          ssh_options: host.ssh_options
+        )
       end
 
-      # Set global variables from inventory
-      @inventory.vars.each do |key, value|
+      # Add inventory variables to pipeline
+      @inventory.global_vars.each do |key, value|
         @pipeline.set_variable(key, value)
       end
 
-      KdeployLogger.info("Loaded #{@inventory.hosts.size} hosts from inventory: #{inventory_file}")
+      KdeployLogger.info("Loaded #{@inventory.all_hosts.size} hosts from inventory: #{inventory_file}")
     end
 
-    # Initialize template manager
-    # @param template_dir [String] Template directory path
-    def template_dir(template_dir = nil)
-      template_dir ||= Kdeploy.configuration&.template_dir || 'templates'
-
+    # Set template directory
+    # @param dir [String] Template directory path
+    def template_dir(dir)
       # Resolve relative path to script directory
-      template_dir = File.join(@script_dir, template_dir) unless File.absolute_path?(template_dir)
+      dir = File.join(@script_dir, dir) unless File.absolute_path?(dir)
 
-      @template_manager = TemplateManager.new(template_dir, @pipeline.variables)
+      unless File.directory?(dir)
+        KdeployLogger.warn("Template directory not found: #{dir}")
+        return
+      end
 
-      KdeployLogger.info("Template directory set to: #{template_dir}")
+      @template_dir = dir
+      KdeployLogger.info("Template directory set to: #{dir}")
     end
 
     # Get or initialize template manager
@@ -95,13 +105,24 @@ module Kdeploy
 
     # Define task
     # @param name [String] Task name
-    # @param on [Array, Symbol] Target hosts or roles
-    # @param parallel [Boolean] Execute in parallel
-    # @param fail_fast [Boolean] Stop on first failure
-    # @param max_concurrent [Integer] Maximum concurrent executions
+    # @param on [Array, Symbol] Target hosts or role
+    # @param parallel [Boolean] Run in parallel
+    # @param fail_fast [Boolean] Stop on first error
+    # @param max_concurrent [Integer] Maximum concurrent hosts
     def task(name, on: nil, parallel: true, fail_fast: false, max_concurrent: nil, &block)
-      target_hosts = resolve_target_hosts(on)
+      # Convert role to array if it's a symbol
+      target_hosts = case on
+                     when Symbol
+                       @pipeline.hosts_with_role(on)
+                     when Array
+                       on.flat_map do |target|
+                         target.is_a?(Symbol) ? @pipeline.hosts_with_role(target) : target
+                       end
+                     else
+                       @pipeline.hosts
+                     end
 
+      # Create task
       @current_task = @pipeline.add_task(
         name,
         hosts: target_hosts,
@@ -110,7 +131,10 @@ module Kdeploy
         max_concurrent: max_concurrent
       )
 
+      # Execute task block
       instance_eval(&block) if block_given?
+
+      # Reset current task
       @current_task = nil
     end
 
@@ -141,16 +165,18 @@ module Kdeploy
                          name || cmd.split.first || 'unnamed'
                        end
 
-        @current_task.add_command(
-          command_name,
-          cmd,
+        options = {
+          name: command_name,
           timeout: timeout,
           retry_count: retry_count,
           retry_delay: retry_delay,
           ignore_errors: ignore_errors,
           only: only,
-          except: except
-        )
+          except: except,
+          global_variables: @pipeline.variables
+        }
+
+        @current_task.add_command(cmd, options)
       end
     end
 
@@ -158,10 +184,32 @@ module Kdeploy
     # @param command [String] Local command to execute
     # @param name [String] Command name (optional)
     def local(command, name: nil)
-      require 'open3'
-
+      # Process heredoc commands - split multi-line commands into separate commands
       processed_commands = process_heredoc_command(command)
-      processed_commands.each_with_index { |cmd, index| execute_local_command(cmd, name, index, processed_commands.size) }
+
+      processed_commands.each_with_index do |cmd, index|
+        cmd = cmd.strip
+        next if cmd.empty? || cmd.start_with?('#') # Skip empty lines and comments
+
+        command_name = if processed_commands.size > 1
+                         name ? "#{name}_#{index + 1}" : "#{cmd.split.first || 'unnamed'}_#{index + 1}"
+                       else
+                         name || cmd.split.first || 'unnamed'
+                       end
+
+        # Create a local host if not exists
+        local_host = Host.new('localhost', user: ENV.fetch('USER', nil), port: 22)
+
+        # Create a task for local command
+        task = Task.new("local_#{command_name}", [local_host])
+        task.global_variables = @pipeline.variables
+
+        # Add command to task
+        task.add_command(cmd, name: command_name)
+
+        # Execute task
+        task.execute
+      end
     end
 
     # Upload file to hosts
@@ -182,20 +230,62 @@ module Kdeploy
       @current_task.commands << upload_command
     end
 
-    # Upload template file with variable substitution
-    # @param template_name [String] Template name (without .erb extension)
-    # @param remote_path [String] Remote file path
-    # @param variables [Hash] Template variables
+    # Upload template file to remote host
+    # @param template [String] Template file path
+    # @param destination [String] Remote destination path
     # @param name [String] Command name (optional)
-    def upload_template(template_name, remote_path, variables: {}, name: nil)
+    # @param timeout [Integer] Command timeout
+    # @param retry_count [Integer] Number of retries
+    # @param retry_delay [Integer] Delay between retries
+    # @param ignore_errors [Boolean] Continue on error
+    # @param only [Array, Symbol] Run only on specified roles
+    # @param except [Array, Symbol] Skip specified roles
+    def upload_template(template, destination, name: nil, timeout: nil, retry_count: nil, retry_delay: nil,
+                        ignore_errors: false, only: nil, except: nil)
       raise 'upload_template can only be called within a task block' unless @current_task
+      raise 'Template directory not set' unless @template_dir
 
-      command_name = name || "upload_template #{template_name}"
+      # Resolve template path
+      template_path = File.join(@template_dir, template)
+      raise "Template file not found: #{template_path}" unless File.exist?(template_path)
 
-      # Add template upload command with global variables
-      template_command = TemplateUploadCommand.new(template_name, remote_path, variables, template_manager, @pipeline.variables)
-      template_command.instance_variable_set(:@name, command_name)
-      @current_task.commands << template_command
+      # Create temporary file with processed template
+      require 'tempfile'
+      require 'erb'
+      require 'ostruct'
+
+      temp_file = Tempfile.new(['kdeploy', File.extname(template)])
+      begin
+        # Read template content
+        template_content = File.read(template_path)
+
+        # Create binding with variables
+        variables = @pipeline.variables.merge(@current_task.global_variables)
+        binding_object = OpenStruct.new(variables).instance_eval { binding }
+
+        # Process template with ERB
+        erb = ERB.new(template_content)
+        processed_content = erb.result(binding_object)
+
+        # Write processed content to temp file
+        temp_file.write(processed_content)
+        temp_file.close
+
+        # Add upload command
+        command_name = name || "upload_template_#{File.basename(template)}"
+        @current_task.add_command(
+          "cat #{temp_file.path} | ssh -o StrictHostKeyChecking=no {{user}}@{{hostname}} 'cat > #{destination}'",
+          name: command_name,
+          timeout: timeout,
+          retry_count: retry_count,
+          retry_delay: retry_delay,
+          ignore_errors: ignore_errors,
+          only: only,
+          except: except
+        )
+      ensure
+        temp_file.unlink
+      end
     end
 
     # Render template to string

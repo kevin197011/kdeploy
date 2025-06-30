@@ -70,6 +70,15 @@ module Kdeploy
       true
     end
 
+    def result
+      @result || {
+        stdout: '',
+        stderr: '',
+        exit_code: nil,
+        success: false
+      }
+    end
+
     private
 
     def default_options
@@ -88,32 +97,41 @@ module Kdeploy
 
       # Replace global variables first (lower priority)
       @global_variables.each do |key, value|
-        processed = processed.gsub("{{#{key}}}", value.to_s)
-        processed = processed.gsub("${#{key}}", value.to_s)
+        processed = processed.gsub(/\{\{#{key}\}\}|\$\{#{key}\}/, value.to_s)
       end
 
-      # Replace host variables (higher priority, can override globals)
-      host.vars.each do |key, value|
-        processed = processed.gsub("{{#{key}}}", value.to_s)
-        processed = processed.gsub("${#{key}}", value.to_s)
+      if host
+        # Replace host variables (higher priority, can override globals)
+        host.vars.each do |key, value|
+          processed = processed.gsub(/\{\{#{key}\}\}|\$\{#{key}\}/, value.to_s)
+        end
+
+        # Replace host information (highest priority)
+        processed = processed.gsub(/\{\{hostname\}\}|\$\{hostname\}/, host.hostname)
+        processed = processed.gsub(/\{\{user\}\}|\$\{user\}/, host.user)
+        processed = processed.gsub(/\{\{port\}\}|\$\{port\}/, host.port.to_s)
       end
 
-      # Replace host information (highest priority)
-      processed = processed.gsub('{{hostname}}', host.hostname)
-      processed = processed.gsub('{{user}}', host.user)
-      processed.gsub('{{port}}', host.port.to_s)
+      # Replace any remaining variables with empty string
+      processed = processed.gsub(/\{\{[^}]+\}\}|\$\{[^}]+\}/, '')
+
+      # Log the processed command
+      KdeployLogger.debug("Processed command: #{processed}")
+
+      processed
     end
 
     def execute_with_retry(connection, command)
       retry_count = @options[:retry_count] || Kdeploy.configuration&.retry_count || 0
       retry_delay = @options[:retry_delay] || Kdeploy.configuration&.retry_delay || 1
+      timeout = @options[:timeout] || Kdeploy.configuration&.command_timeout || 300
 
       result = nil
       attempts = 0
 
       loop do
         attempts += 1
-        result = connection.execute(command, timeout: @options[:timeout])
+        result = connection.execute(command, timeout: timeout)
 
         break if result[:success] || attempts > retry_count
 
@@ -129,21 +147,22 @@ module Kdeploy
     def log_result(host, duration)
       if @result[:success]
         KdeployLogger.info("✅ Command '#{@name}' completed on #{host} in #{duration.round(2)}s")
-        # Show command output at info level for successful commands
-        unless @result[:stdout].strip.empty?
-          KdeployLogger.info('📤 Output:')
-          @result[:stdout].strip.split("\n").each do |line|
-            KdeployLogger.info("   #{line}")
-          end
-        end
       else
-        level = @options[:ignore_errors] ? :warn : :error
-        icon = @options[:ignore_errors] ? '⚠️' : '❌'
-        KdeployLogger.send(level,
-                           "#{icon} Command '#{@name}' failed on #{host} in #{duration.round(2)}s (exit code: #{@result[:exit_code]})")
-        KdeployLogger.send(level, "📤 STDERR: #{@result[:stderr]}") unless @result[:stderr].empty?
-        # Also show stdout for failed commands if available
-        KdeployLogger.send(level, "📤 STDOUT: #{@result[:stdout]}") unless @result[:stdout].strip.empty?
+        KdeployLogger.error("❌ Command '#{@name}' failed on #{host} after #{duration.round(2)}s")
+      end
+
+      unless @result[:stdout].empty?
+        KdeployLogger.info('📤 Output:')
+        @result[:stdout].each_line do |line|
+          KdeployLogger.info("   #{line.chomp}")
+        end
+      end
+
+      return if @result[:stderr].empty?
+
+      KdeployLogger.error('📥 Error:')
+      @result[:stderr].each_line do |line|
+        KdeployLogger.error("   #{line.chomp}")
       end
     end
   end

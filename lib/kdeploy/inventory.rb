@@ -4,11 +4,14 @@ module Kdeploy
   class Inventory
     attr_reader :hosts, :groups, :vars
 
-    def initialize(inventory_file = nil)
-      @hosts = {}
+    def initialize(inventory_file)
+      @data = YAML.load_file(inventory_file)
       @groups = {}
-      @vars = {}
-      load_from_file(inventory_file) if inventory_file && File.exist?(inventory_file)
+      @vars = @data['vars'] || @data[:vars] || {}
+
+      parse_groups(@data)
+
+      KdeployLogger.info("Loaded #{all_hosts.size} hosts from inventory: #{inventory_file}")
     end
 
     # Load inventory from YAML file
@@ -40,10 +43,16 @@ module Kdeploy
       @hosts.values.select { |host| host.has_role?(role) }
     end
 
-    # Get all hosts
+    # Get all hosts from all groups
     # @return [Array<Host>] All hosts
     def all_hosts
-      @hosts.values
+      hosts = Set.new
+      @groups.each_value do |group|
+        group[:hosts].each do |host|
+          hosts.add(host)
+        end
+      end
+      hosts.to_a
     end
 
     # Get host by hostname
@@ -64,11 +73,10 @@ module Kdeploy
       @groups[group_name][:vars][var_name.to_s] || @groups[group_name][:vars][var_name.to_sym]
     end
 
-    # Get global variable
-    # @param var_name [String, Symbol] Variable name
-    # @return [Object] Variable value
-    def global_var(var_name)
-      @vars[var_name.to_s] || @vars[var_name.to_sym]
+    # Get global variables
+    # @return [Hash] Global variables
+    def global_vars
+      @vars
     end
 
     # Export inventory summary
@@ -112,10 +120,34 @@ module Kdeploy
         group_config ||= {}
 
         @groups[group_name] = {
-          hosts: Array(group_config['hosts'] || group_config[:hosts] || []),
+          hosts: [],
           vars: group_config['vars'] || group_config[:vars] || {},
           children: Array(group_config['children'] || group_config[:children] || [])
         }
+
+        # Parse hosts in group
+        Array(group_config['hosts'] || group_config[:hosts]).each do |host_config|
+          if host_config.is_a?(Hash)
+            hostname = host_config['hostname'] || host_config[:hostname]
+            next unless hostname
+
+            # Create host object
+            host = Host.new(
+              hostname,
+              user: host_config['user'] || host_config[:user],
+              port: host_config['port'] || host_config[:port],
+              roles: Array(host_config['roles'] || host_config[:roles] || [group_name]),
+              vars: host_config['vars'] || host_config[:vars] || {},
+              ssh_options: host_config['ssh'] || host_config[:ssh] || {}
+            )
+
+            # Add host to group
+          else
+            # Simple hostname string
+            host = Host.new(host_config, roles: [group_name])
+          end
+          @groups[group_name][:hosts] << host
+        end
       end
 
       # Resolve group children

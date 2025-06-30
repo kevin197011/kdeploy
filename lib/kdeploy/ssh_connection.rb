@@ -7,29 +7,33 @@ module Kdeploy
     def initialize(host)
       @host = host
       @session = nil
-      @connected = false
     end
 
     # Establish SSH connection
     # @return [Boolean] True if connection successful
     def connect
-      return true if connected?
+      return if @session
+
+      require 'net/ssh'
 
       KdeployLogger.debug("Connecting to #{@host}")
 
-      @session = Net::SSH.start(
-        @host.hostname,
-        @host.user,
-        port: @host.port,
-        **@host.connection_options
-      )
+      begin
+        @session = Net::SSH.start(
+          @host.hostname,
+          @host.user,
+          port: @host.port,
+          **@host.connection_options
+        )
+      rescue Net::SSH::AuthenticationFailed => e
+        raise "SSH authentication failed for #{@host}: #{e.message}"
+      rescue Net::SSH::ConnectionTimeout => e
+        raise "SSH connection timed out for #{@host}: #{e.message}"
+      rescue StandardError => e
+        raise "SSH connection failed for #{@host}: #{e.message}"
+      end
 
-      @connected = true
       KdeployLogger.debug("Connected to #{@host}")
-      true
-    rescue Net::SSH::Exception => e
-      KdeployLogger.error("Failed to connect to #{@host}: #{e.message}")
-      raise ConnectionError, "Failed to connect to #{@host}: #{e.message}"
     end
 
     # Check if connection is active
@@ -43,6 +47,8 @@ module Kdeploy
     # @param timeout [Integer] Command timeout in seconds
     # @return [Hash] Result with stdout, stderr, exit_code
     def execute(command, timeout: nil)
+      return execute_local(command) if @host.hostname == 'localhost'
+
       ensure_connected
 
       result = {
@@ -56,29 +62,36 @@ module Kdeploy
 
       KdeployLogger.debug("Executing on #{@host}: #{command}")
 
-      channel = @session.open_channel do |ch|
-        ch.exec(command) do |ch, success|
-          unless success
-            result[:stderr] = 'Failed to execute command'
-            result[:exit_code] = 1
-            return result
+      begin
+        Timeout.timeout(timeout) do
+          channel = @session.open_channel do |ch|
+            ch.exec(command) do |ch, success|
+              unless success
+                result[:stderr] = 'Failed to execute command'
+                result[:exit_code] = 1
+                return result
+              end
+
+              ch.on_data do |_ch, data|
+                result[:stdout] += data
+              end
+
+              ch.on_extended_data do |_ch, _type, data|
+                result[:stderr] += data
+              end
+
+              ch.on_request('exit-status') do |_ch, data|
+                result[:exit_code] = data.read_long
+              end
+            end
           end
 
-          ch.on_data do |_ch, data|
-            result[:stdout] += data
-          end
-
-          ch.on_extended_data do |_ch, _type, data|
-            result[:stderr] += data
-          end
-
-          ch.on_request('exit-status') do |_ch, data|
-            result[:exit_code] = data.read_long
-          end
+          channel.wait
         end
+      rescue Timeout::Error
+        result[:stderr] = "Command timed out after #{timeout} seconds"
+        result[:exit_code] = 1
       end
-
-      channel.wait
 
       result[:success] = result[:exit_code]&.zero? || false
 
@@ -143,7 +156,11 @@ module Kdeploy
 
     # Clean up connection
     def cleanup
-      disconnect
+      return unless @session
+
+      KdeployLogger.debug("Closing connection to #{@host}")
+      @session.close
+      @session = nil
     end
 
     private
@@ -151,6 +168,35 @@ module Kdeploy
     def ensure_connected
       connect unless connected?
       raise ConnectionError, "Not connected to #{@host}" unless connected?
+    end
+
+    def execute_local(command)
+      require 'open3'
+
+      KdeployLogger.debug("Executing locally: #{command}")
+
+      begin
+        stdout, stderr, status = Open3.capture3(command)
+
+        result = {
+          stdout: stdout,
+          stderr: stderr,
+          exit_code: status.exitstatus,
+          success: status.success?
+        }
+
+        KdeployLogger.debug("Local command completed: exit_code=#{result[:exit_code]}")
+
+        result
+      rescue StandardError => e
+        KdeployLogger.error("Local execution error: #{e.message}")
+        {
+          stdout: '',
+          stderr: e.message,
+          exit_code: 1,
+          success: false
+        }
+      end
     end
   end
 end
