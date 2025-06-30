@@ -1,0 +1,19 @@
+# Server inventory configuration
+vars:
+  app_name: myapp
+  deploy_path: /opt/myapp
+  environment: production
+
+groups:
+  devops:
+    hosts:
+      - hostname: 157.245.153.4
+        roles: [nginx, app]
+        user: root
+        port: 22
+        ssh:
+          key_file: ~/.ssh/id_rsa
+          verify_host_key: false
+        vars:
+          nginx_port: 80
+          app_port: 3000

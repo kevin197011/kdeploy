@@ -1,0 +1,15 @@
+[Unit]
+Description={{app_name}} service
+After=network.target
+
+[Service]
+Type=simple
+User={{deploy_user}}
+WorkingDirectory={{deploy_path}}
+ExecStart=/usr/bin/node server.js
+Restart=always
+Environment=NODE_ENV={{environment}}
+Environment=PORT={{app_port}}
+
+[Install]
+WantedBy=multi-user.target
