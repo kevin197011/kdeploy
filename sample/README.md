@@ -1,96 +1,83 @@
-# Deployment Project
-```
-          _            _
-  / /__| | ___ _ __ | | ___  _   _
- / //_/ _` |/ _  '_ | |/ _ | | | |
-/ __  (_| |  __/ |_) | | (_) | |_| |
-/  /__,_|___| .__/|_|___/ __, |
-                |_|            |___/
+        # Deployment Project
 
+        This is a deployment project created with Kdeploy.
 
-⚡ Lightweight Agentless Deployment Tool
-🚀 Deploy with confidence, scale with ease
+        ## 📁 Structure
 
-```
+        ```
+        .
+        ├── deploy.rb           # Deployment tasks
+        ├── config/            # Configuration files
+        │   ├── nginx.conf.erb # Nginx configuration template
+        │   └── app.conf      # Static configuration
+        └── README.md         # This file
+        ```
 
-This is a deployment project created with Kdeploy.
+        ## 🔧 Configuration Templates
 
-## 📁 Structure
+        The project uses ERB templates for dynamic configuration. For example, in `nginx.conf.erb`:
 
-```
-.
-├── deploy.rb           # Deployment tasks
-├── config/            # Configuration files
-│   ├── nginx.conf.erb # Nginx configuration template
-│   └── app.conf      # Static configuration
-└── README.md         # This file
-```
+        ```erb
+        worker_processes <%= worker_processes %>;
+        server_name <%= domain_name %>;
+        ```
 
-## 🔧 Configuration Templates
+        Variables are passed when uploading the template:
 
-The project uses ERB templates for dynamic configuration. For example, in `nginx.conf.erb`:
+        ```ruby
+        upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
+          domain_name: "example.com",
+          worker_processes: 4
+        ```
 
-```erb
-worker_processes <%= worker_processes %>;
-server_name <%= domain_name %>;
-```
+        ## 🚀 Usage
 
-Variables are passed when uploading the template:
+        ### Task Execution
 
-```ruby
-upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-  domain_name: "example.com",
-  worker_processes: 4
-```
+        ```bash
+        # Execute all tasks in the file
+        kdeploy execute deploy.rb
 
-## 🚀 Usage
+        # Execute a specific task
+        kdeploy execute deploy.rb deploy_web
 
-### Task Execution
+        # Execute with dry run (preview mode)
+        kdeploy execute deploy.rb --dry-run
 
-```bash
-# Execute all tasks in the file
-kdeploy execute deploy.rb
+        # Execute on specific hosts
+        kdeploy execute deploy.rb --limit web01,web02
 
-# Execute a specific task
-kdeploy execute deploy.rb deploy_web
+        # Execute with custom parallel count
+        kdeploy execute deploy.rb --parallel 5
+        ```
 
-# Execute with dry run (preview mode)
-kdeploy execute deploy.rb --dry-run
+        When executing without specifying a task name (`kdeploy execute deploy.rb`), Kdeploy will:
+        1. Execute all defined tasks in the file
+        2. Run tasks in the order they were defined
+        3. Show task name before each task execution
+        4. Display color-coded output for better readability:
+           - 🟢 Green: Normal output and success messages
+           - 🔴 Red: Errors and failure messages
+           - 🟡 Yellow: Warnings and notices
 
-# Execute on specific hosts
-kdeploy execute deploy.rb --limit web01,web02
+        ### Available Tasks
 
-# Execute with custom parallel count
-kdeploy execute deploy.rb --parallel 5
-```
+        - **deploy_web**: Deploy and configure Nginx web servers
+          ```bash
+          kdeploy execute deploy.rb deploy_web
+          ```
 
-When executing without specifying a task name (`kdeploy execute deploy.rb`), Kdeploy will:
-1. Execute all defined tasks in the file
-2. Run tasks in the order they were defined
-3. Show task name before each task execution
-4. Display color-coded output for better readability:
-   - 🟢 Green: Normal output and success messages
-   - 🔴 Red: Errors and failure messages
-   - 🟡 Yellow: Warnings and notices
+        - **backup_db**: Backup database to S3
+          ```bash
+          kdeploy execute deploy.rb backup_db
+          ```
 
-### Available Tasks
+        - **maintenance**: Run maintenance on specific host
+          ```bash
+          kdeploy execute deploy.rb maintenance
+          ```
 
-- **deploy_web**: Deploy and configure Nginx web servers
-  ```bash
-  kdeploy execute deploy.rb deploy_web
-  ```
-
-- **backup_db**: Backup database to S3
-  ```bash
-  kdeploy execute deploy.rb backup_db
-  ```
-
-- **maintenance**: Run maintenance on specific host
-  ```bash
-  kdeploy execute deploy.rb maintenance
-  ```
-
-- **update**: Update all hosts
-  ```bash
-  kdeploy execute deploy.rb update
-  ```
+        - **update**: Update all hosts
+          ```bash
+          kdeploy execute deploy.rb update
+          ```

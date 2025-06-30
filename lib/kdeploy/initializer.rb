@@ -157,20 +157,6 @@ module Kdeploy
       File.write(File.join(@target_dir, 'README.md'), <<~MD)
         # Deployment Project
 
-        ```
-                    _            _
-            /\\ /\\__| | ___ _ __ | | ___  _   _
-           / //_/ _`|/ _ \\ '_ \\| |/ _ \\| | | |
-          / __ \\ (_| |  __/ |_) | | (_) | |_| |
-          \\/  \\/\\__,_|\\___| .__/|_|\\___/ \\__, |
-                          |_|            |___/
-
-
-          ⚡ Lightweight Agentless Deployment Tool
-          🚀 Deploy with confidence, scale with ease
-
-        ```
-
         This is a deployment project created with Kdeploy.
 
         ## 📁 Structure
@@ -227,9 +213,9 @@ module Kdeploy
         2. Run tasks in the order they were defined
         3. Show task name before each task execution
         4. Display color-coded output for better readability:
-           - 🟢 Green: Normal output and success messages
-           - 🔴 Red: Errors and failure messages
-           - 🟡 Yellow: Warnings and notices
+            - 🟢 Green: Normal output and success messages
+            - 🔴 Red: Errors and failure messages
+            - 🟡 Yellow: Warnings and notices
 
         ### Available Tasks
 
