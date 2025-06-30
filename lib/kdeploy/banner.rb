@@ -1,27 +1,29 @@
-# frozen_string_literal: true
-
 module Kdeploy
-  # Banner module for displaying ASCII art banner
-  module Banner
+  # ASCII banner and helper to print it consistently
+  class Banner
+    # Banner ASCII art template
+    TEXT = <<~BANNER.freeze
+                _            _
+        /\\ /\\__| | ___ _ __ | | ___  _   _
+       / //_/ _` |/ _ \\ '_ \\| |/ _ \\| | | |
+      / __ \\ (_| |  __/ |_) | | (_) | |_| |
+      \\/  \\/\\__,_|\\___| .__/|_|\\___/ \\__, |
+                      |_|            |___/
+
+        ⚡ Lightweight Agentless Deployment Tool v0.1.0
+        🚀 Deploy with confidence, scale with ease
+    BANNER
+
     class << self
-      def show
-        puts banner.colorize(:light_blue)
+      # Return raw banner text
+      def text
+        TEXT
       end
 
-      private
-
-      def banner
-        <<~BANNER
-                    _            _
-            /\\ /\\__| | ___ _ __ | | ___  _   _
-           / //_/ _` |/ _ \\ '_ \\| |/ _ \\| | | |
-          / __ \\ (_| |  __/ |_) | | (_) | |_| |
-          \\/  \\/\\__,_|\\___| .__/|_|\\___/ \\__, |
-                          |_|            |___/
-
-            ⚡ Lightweight Agentless Deployment Tool
-            🚀 Deploy with confidence, scale with ease
-        BANNER
+      # Print banner with specified color
+      # @param color [Symbol] ANSI color name
+      def print(color = :cyan)
+        puts TEXT.colorize(color)
       end
     end
   end

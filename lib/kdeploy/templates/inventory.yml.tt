@@ -1,0 +1,190 @@
+# Kdeploy 主机清单
+# 版本: 1.0.0
+
+# 全局变量
+vars:
+  application: myapp
+  version: 1.0.0
+  deploy_to: /opt/myapp
+  environment: production
+  branch: main
+  database: myapp_production
+  backup_path: /backup/myapp
+
+# 主机群组
+groups:
+  production:
+    hosts:
+      - web1.example.com
+      - web2.example.com
+      - app1.example.com
+      - app2.example.com
+      - db1.example.com
+    vars:
+      environment: production
+      nginx_port: 80
+      app_port: 3000
+
+  staging:
+    hosts:
+      - staging-web.example.com
+      - staging-app.example.com
+      - staging-db.example.com
+    vars:
+      environment: staging
+      nginx_port: 8080
+      app_port: 3000
+
+  development:
+    hosts:
+      - dev.example.com
+    vars:
+      environment: development
+      nginx_port: 8080
+      app_port: 3000
+
+# 角色群组
+roles:
+  web:
+    hosts:
+      - web1.example.com
+      - web2.example.com
+    vars:
+      nginx_port: 80
+      ssl_enabled: true
+      ssl_cert_path: /etc/ssl/certs
+      ssl_key_path: /etc/ssl/private
+
+  app:
+    hosts:
+      - app1.example.com
+      - app2.example.com
+    vars:
+      app_port: 3000
+      sidekiq_enabled: true
+      redis_url: redis://redis:6379/0
+      memcached_url: memcached:11211
+
+  db:
+    hosts:
+      - db1.example.com
+    vars:
+      postgres_port: 5432
+      backup_enabled: true
+      backup_retention: 7
+      replication_enabled: true
+
+# 主机详细配置
+hosts:
+  web1.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - web
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      server_id: 1
+      primary: true
+
+  web2.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - web
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      server_id: 2
+      primary: false
+
+  app1.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - app
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      server_id: 3
+      primary: true
+      worker_processes: 4
+      max_memory: 4G
+
+  app2.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - app
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      server_id: 4
+      primary: false
+      worker_processes: 4
+      max_memory: 4G
+
+  db1.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - db
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      server_id: 5
+      primary: true
+      max_connections: 1000
+      shared_buffers: 4GB
+      effective_cache_size: 12GB
+
+  staging-web.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - web
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      environment: staging
+
+  staging-app.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - app
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      environment: staging
+
+  staging-db.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - db
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      environment: staging
+
+  dev.example.com:
+    user: deploy
+    port: 22
+    roles:
+      - web
+      - app
+      - db
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      environment: development

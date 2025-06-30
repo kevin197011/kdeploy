@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
 module Kdeploy
-  # Pipeline class for managing deployment tasks and hosts
   class Pipeline
     attr_reader :name, :hosts, :tasks, :variables
 
@@ -19,17 +18,22 @@ module Kdeploy
     # @param ssh_options [Hash] SSH options
     # @param roles [Array] Host roles
     # @param vars [Hash] Host variables
-    # @return [Host] Created host
     def add_host(hostname, user: nil, port: nil, ssh_options: {}, roles: [], vars: {})
+      # Convert roles to array if it's a single value
+      roles = Array(roles)
+
+      # Create host object
       host = Host.new(
         hostname,
-        user: user,
-        port: port,
+        user: user || 'root',
+        port: port || 22,
         ssh_options: ssh_options,
         roles: roles,
         vars: vars
       )
-      @hosts << host unless @hosts.include?(host)
+
+      # Add host if not already present
+      @hosts << host unless @hosts.any? { |h| h.hostname == host.hostname }
       host
     end
 
@@ -38,7 +42,14 @@ module Kdeploy
     def add_hosts(hosts_config)
       hosts_config.each do |hostname, config|
         config ||= {}
-        add_host_from_config(hostname, config)
+        add_host(
+          hostname,
+          user: config['user'] || config[:user],
+          port: config['port'] || config[:port],
+          ssh_options: config['ssh_options'] || config[:ssh_options] || {},
+          roles: config['roles'] || config[:roles] || [],
+          vars: config['vars'] || config[:vars] || {}
+        )
       end
     end
 
@@ -55,8 +66,26 @@ module Kdeploy
     # @param options [Hash] Task options
     # @return [Task] Created task
     def add_task(name, hosts: nil, **options)
-      target_hosts = hosts || @hosts
-      task = create_task(name, target_hosts, options)
+      target_hosts = case hosts
+                     when Array
+                       hosts
+                     when Symbol
+                       hosts_with_role(hosts)
+                     when String
+                       hosts_with_role(hosts.to_sym)
+                     else
+                       @hosts
+                     end
+
+      # Validate hosts
+      if target_hosts.empty?
+        KdeployLogger.warn("No hosts found for role '#{hosts}', task '#{name}' will be skipped")
+        target_hosts = @hosts
+      end
+
+      task = Task.new(name, target_hosts, options)
+      # Set global variables from pipeline
+      task.global_variables = @variables
       @tasks << task
       task
     end
@@ -66,6 +95,7 @@ module Kdeploy
     # @param value [Object] Variable value
     def set_variable(key, value)
       @variables[key.to_s] = value
+      @variables[key.to_sym] = value
     end
 
     # Get global variable
@@ -78,16 +108,41 @@ module Kdeploy
     # Execute all tasks in pipeline
     # @return [Hash] Execution results
     def execute
-      return empty_execution_result if @tasks.empty?
+      return { success: true, results: [], duration: 0 } if @tasks.empty?
 
-      log_pipeline_start
+      KdeployLogger.info("Starting pipeline '#{@name}' with #{@tasks.size} task(s) on #{@hosts.size} host(s)")
+
       start_time = Time.now
-      results = execute_tasks
-      duration = Time.now - start_time
-      success_count = count_successful_tasks(results)
+      results = []
+      overall_success = true
 
-      log_pipeline_completion(duration, success_count)
-      build_execution_result(results, duration, success_count)
+      @tasks.each_with_index do |task, index|
+        KdeployLogger.info("Executing task #{index + 1}/#{@tasks.size}: '#{task.name}'")
+
+        result = task.execute
+        results << {
+          task_name: task.name,
+          **result
+        }
+
+        unless result[:success]
+          overall_success = false
+          KdeployLogger.error("Task '#{task.name}' failed, pipeline execution continuing...")
+        end
+      end
+
+      duration = Time.now - start_time
+      success_count = results.count { |r| r[:success] }
+
+      KdeployLogger.info("Pipeline '#{@name}' completed in #{duration.round(2)}s: #{success_count}/#{@tasks.size} tasks successful")
+
+      {
+        success: overall_success,
+        results: results,
+        duration: duration,
+        tasks_count: @tasks.size,
+        success_count: success_count
+      }
     end
 
     # Get pipeline summary
@@ -106,9 +161,21 @@ module Kdeploy
     # @return [Array<String>] Validation errors
     def validate
       errors = []
-      errors.concat(validate_pipeline_structure)
-      errors.concat(validate_hosts)
-      errors.concat(validate_tasks)
+
+      errors << 'No hosts defined' if @hosts.empty?
+      errors << 'No tasks defined' if @tasks.empty?
+
+      @hosts.each do |host|
+        errors << "Invalid hostname: #{host.hostname}" if host.hostname.nil? || host.hostname.empty?
+        errors << "Invalid user: #{host.user}" if host.user.nil? || host.user.empty?
+        errors << "Invalid port: #{host.port}" unless host.port.is_a?(Integer) && host.port.positive?
+      end
+
+      @tasks.each do |task|
+        errors << "Task '#{task.name}' has no commands" if task.commands.empty?
+        errors << "Task '#{task.name}' has no hosts" if task.hosts.empty?
+      end
+
       errors
     end
 
@@ -120,130 +187,29 @@ module Kdeploy
 
     private
 
-    def add_host_from_config(hostname, config)
-      add_host(
-        hostname,
-        user: config['user'] || config[:user],
-        port: config['port'] || config[:port],
-        ssh_options: config['ssh_options'] || config[:ssh_options] || {},
-        roles: config['roles'] || config[:roles] || [],
-        vars: config['vars'] || config[:vars] || {}
-      )
-    end
+    def validate_required_variables
+      required_vars = %w[deploy_to user hostname]
+      missing_vars = []
 
-    def create_task(name, target_hosts, options)
-      task = Task.new(name, target_hosts, options)
-      task.global_variables = @variables
-      task
-    end
+      required_vars.each do |var|
+        # Check if variable exists in global variables
+        next if @variables[var] || @variables[var.to_sym]
 
-    def empty_execution_result
-      { success: true, results: [], duration: 0 }
-    end
+        # Check if variable exists in any host variables
+        next if @hosts.any? { |host| (host.vars || {}).key?(var) || (host.vars || {}).key?(var.to_sym) }
 
-    def log_pipeline_start
-      KdeployLogger.info(
-        "Starting pipeline '#{@name}' with #{@tasks.size} task(s) on #{@hosts.size} host(s)"
-      )
-    end
+        # Check if variable is a host attribute
+        next if var == 'user' && @hosts.all? { |host| host.user }
+        next if var == 'hostname' && @hosts.all? { |host| host.hostname }
 
-    def execute_tasks
-      results = []
-      overall_success = true
-
-      @tasks.each_with_index do |task, index|
-        log_task_execution(task, index)
-        result = execute_task(task)
-        results << result
-        overall_success = false unless result[:success]
+        missing_vars << var
       end
 
-      results
-    end
+      return if missing_vars.empty?
 
-    def log_task_execution(task, index)
-      KdeployLogger.info("Executing task #{index + 1}/#{@tasks.size}: '#{task.name}'")
-    end
-
-    def execute_task(task)
-      result = task.execute
-      log_task_failure(task) unless result[:success]
-
-      {
-        task_name: task.name,
-        **result
-      }
-    end
-
-    def log_task_failure(task)
-      KdeployLogger.error("Task '#{task.name}' failed, pipeline execution continuing...")
-    end
-
-    def count_successful_tasks(results)
-      results.count { |r| r[:success] }
-    end
-
-    def log_pipeline_completion(duration, success_count)
-      KdeployLogger.info(
-        "Pipeline '#{@name}' completed in #{duration.round(2)}s: " \
-        "#{success_count}/#{@tasks.size} tasks successful"
-      )
-    end
-
-    def build_execution_result(results, duration, success_count)
-      {
-        success: results.all? { |r| r[:success] },
-        results: results,
-        duration: duration,
-        tasks_count: @tasks.size,
-        success_count: success_count
-      }
-    end
-
-    def validate_pipeline_structure
-      errors = []
-      errors << 'No hosts defined' if @hosts.empty?
-      errors << 'No tasks defined' if @tasks.empty?
-      errors
-    end
-
-    def validate_hosts
-      @hosts.each_with_object([]) do |host, errors|
-        errors.concat(validate_host(host))
-      end
-    end
-
-    def validate_host(host)
-      errors = []
-      errors << "Invalid hostname: #{host.hostname}" if invalid_hostname?(host)
-      errors << "Invalid user: #{host.user}" if invalid_user?(host)
-      errors << "Invalid port: #{host.port}" if invalid_port?(host)
-      errors
-    end
-
-    def invalid_hostname?(host)
-      host.hostname.nil? || host.hostname.empty?
-    end
-
-    def invalid_user?(host)
-      host.user.nil? || host.user.empty?
-    end
-
-    def invalid_port?(host)
-      !host.port.is_a?(Integer) || !host.port.positive?
-    end
-
-    def validate_tasks
-      @tasks.each_with_object([]) do |task, errors|
-        errors.concat(validate_task(task))
-      end
-    end
-
-    def validate_task(task)
-      errors = []
-      errors << "Task '#{task.name}' has no commands" if task.commands.empty?
-      errors << "Task '#{task.name}' has no hosts" if task.hosts.empty?
-      errors
+      KdeployLogger.error("Missing required variables: #{missing_vars.join(', ')}")
+      KdeployLogger.error("Available variables: #{@variables.keys.join(', ')}")
+      raise "Missing required variables: #{missing_vars.join(', ')}"
     end
   end
 end

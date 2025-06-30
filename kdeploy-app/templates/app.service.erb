@@ -1,0 +1,15 @@
+[Unit]
+Description=<%= application %> service
+After=network.target
+
+[Service]
+Type=simple
+User=<%= user %>
+WorkingDirectory=<%= deploy_to %>
+ExecStart=/usr/bin/node server.js
+Restart=always
+Environment=NODE_ENV=<%= environment %>
+Environment=PORT=<%= app_port %>
+
+[Install]
+WantedBy=multi-user.target

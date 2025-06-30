@@ -1,0 +1,42 @@
+---
+# 全局变量
+vars:
+  application: nginx
+  version: 1.0.0
+  deploy_to: /opt/myapp
+  environment: production
+  user: root
+  hostname: 157.245.153.4
+  nginx_port: 80
+  app_port: 3000
+
+# 主机群组
+groups:
+  web:
+    hosts:
+      - 157.245.153.4
+    vars:
+      nginx_port: 80
+      app_port: 3000
+
+  app:
+    hosts:
+      - 157.245.153.4
+    vars:
+      app_port: 3000
+
+# 主机详细配置
+hosts:
+  157.245.153.4:
+    user: root
+    port: 22
+    roles:
+      - web
+      - app
+    ssh:
+      key_file: ~/.ssh/id_rsa
+      verify_host_key: false
+    vars:
+      server_id: 1
+      nginx_port: 80
+      app_port: 3000
