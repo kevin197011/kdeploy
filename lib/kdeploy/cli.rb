@@ -1,209 +1,201 @@
 # frozen_string_literal: true
 
-# Add String truncate method if not available
-class String
-  def truncate(length)
-    return self if size <= length
-
-    "#{self[0, length - 3]}..."
-  end
-end
+require 'thor'
+require 'pastel'
+require 'tty-table'
+require 'tty-box'
+require 'fileutils'
 
 module Kdeploy
   class CLI < Thor
-    include Thor::Actions
+    extend DSL
 
-    # Fix Thor deprecation warning
     def self.exit_on_failure?
       true
     end
 
-    # 显示版本信息
-    map %w[-v --version] => :version
-    desc 'version', 'Display version information'
+    map %w[--help -h] => :help
+    map %w[--version -v] => :version
+
+    desc 'version', 'Show version information'
     def version
-      puts Banner.render
-      puts "Version #{VERSION}"
+      puts Kdeploy::Banner.show_version
     end
 
-    # 初始化项目
-    desc 'init [NAME]', 'Initialize a new Kdeploy project'
-    method_option :force, type: :boolean, aliases: '-f', desc: 'Force overwrite existing files'
-    def init(name = nil)
-      if name
-        empty_directory(name)
-        self.destination_root = name
-      end
-
-      # 创建项目结构
-      directory('templates', 'templates')
-      directory('scripts', 'scripts')
-      directory('config', 'config')
-
-      # 创建基础文件
-      template('deploy.rb.tt', 'deploy.rb')
-      template('inventory.yml.tt', 'inventory.yml')
-      template('README.md.tt', 'README.md')
-      template('Gemfile.tt', 'Gemfile')
-
-      # 初始化 Git
-      inside(destination_root) do
-        run('git init') if options[:git] && !File.exist?('.git')
-      end
-
-      say '✅ Project initialized successfully!', :green
-    end
-
-    # 验证配置
-    desc 'validate SCRIPT', 'Validate deployment script'
-    method_option :inventory, type: :string, aliases: '-i', desc: 'Path to inventory file'
-    def validate(script)
-      Config.logger.info "Validating #{script}..."
-      pipeline = load_script(script)
-
-      if pipeline.valid?
-        say '✅ Configuration is valid!', :green
+    desc 'help [COMMAND]', 'Show help information'
+    def help(command = nil)
+      if command
+        super
       else
-        say '❌ Configuration is invalid!', :red
-        pipeline.errors.each do |error|
-          say "  - #{error}", :red
-        end
-        exit 1
+        pastel = Pastel.new
+        puts Kdeploy::Banner.show
+        puts <<~HELP
+          #{pastel.bright_white('📖 Available Commands:')}
+
+          #{pastel.bright_yellow('🚀')} #{pastel.bright_white('execute TASK_FILE [TASK]')}     Execute deployment tasks from file
+          #{pastel.dim('    --limit HOSTS')}              Limit to specific hosts (comma-separated)
+          #{pastel.dim('    --parallel NUM')}             Number of parallel executions (default: 5)
+          #{pastel.dim('    --dry-run')}                  Show what would be done without executing
+
+          #{pastel.bright_yellow('🆕')} #{pastel.bright_white('init [DIR]')}                  Initialize new deployment project
+          #{pastel.bright_yellow('ℹ️')} #{pastel.bright_white('version')}                    Show version information
+          #{pastel.bright_yellow('❓')} #{pastel.bright_white('help [COMMAND]')}              Show help information
+
+          #{pastel.bright_white('💡 Examples:')}
+
+          #{pastel.dim('# Initialize a new project')}
+          #{pastel.bright_cyan('kdeploy init my-deployment')}
+
+          #{pastel.dim('# Deploy to web servers')}
+          #{pastel.bright_cyan('kdeploy execute deploy.rb deploy_web')}
+
+          #{pastel.dim('# Backup database')}
+          #{pastel.bright_cyan('kdeploy execute deploy.rb backup_db')}
+
+          #{pastel.dim('# Run maintenance on specific hosts')}
+          #{pastel.bright_cyan('kdeploy execute deploy.rb maintenance --limit web01')}
+
+          #{pastel.dim('# Preview deployment')}
+          #{pastel.bright_cyan('kdeploy execute deploy.rb deploy_web --dry-run')}
+
+          #{pastel.bright_white('📚 Documentation:')}
+          #{pastel.bright_cyan('https://github.com/kevin197011/kdeploy')}
+
+        HELP
       end
     end
 
-    # 执行部署
-    desc 'deploy SCRIPT', 'Execute deployment script'
-    method_option :inventory, type: :string, aliases: '-i', desc: 'Path to inventory file'
-    method_option :verbose, type: :boolean, aliases: '-v', desc: 'Enable verbose output'
-    method_option :dry_run, type: :boolean, desc: 'Perform a dry run'
-    method_option :parallel, type: :boolean, desc: 'Enable parallel execution'
-    method_option :task, type: :string, aliases: '-t', desc: 'Execute specific task'
-    def deploy(script)
-      Config.logger.info 'Starting deployment...'
-
-      # 加载脚本
-      pipeline = load_script(script)
-
-      # 设置选项
-      pipeline.dry_run = options[:dry_run]
-      pipeline.parallel = options[:parallel]
-      pipeline.verbose = options[:verbose]
-
-      # 执行部署
-      if options[:task]
-        pipeline.execute_task(options[:task])
-      else
-        pipeline.execute
-      end
-
-      Config.logger.info 'Deployment completed successfully!'
-    rescue Error => e
-      Config.logger.error "Deployment failed: #{e.message}"
+    desc 'init [DIR]', 'Initialize a new deployment project'
+    def init(dir = '.')
+      initializer = Initializer.new(dir)
+      initializer.run
+    rescue StandardError => e
+      puts Kdeploy::Banner.show_error(e.message)
       exit 1
     end
 
-    # 统计信息
-    desc 'stats SUBCOMMAND', 'Show deployment statistics'
-    subcommand 'stats', Stats
+    desc 'execute TASK_FILE [TASK]', 'Execute deployment tasks from file'
+    method_option :limit, type: :string, desc: 'Limit to specific hosts (comma-separated)'
+    method_option :parallel, type: :numeric, default: 5, desc: 'Number of parallel executions'
+    method_option :dry_run, type: :boolean, desc: 'Show what would be done'
+    def execute(task_file, task_name = nil)
+      load_task_file(task_file)
 
-    # 配置管理
-    desc 'config', 'Show current configuration'
-    def config
-      table = TTY::Table.new(
-        header: %w[Setting Value],
-        rows: [
-          ['Project Root', Config.root],
-          ['Templates Path', Config.templates_path],
-          ['Inventory Path', Config.inventory_path],
-          ['Log Level', Config.logger.level],
-          ['Version', VERSION]
-        ]
-      )
-      puts table.render(:unicode, padding: [0, 1])
+      tasks_to_run = if task_name
+                       [task_name.to_sym]
+                     else
+                       self.class.kdeploy_tasks.keys
+                     end
+
+      tasks_to_run.each do |task|
+        task_hosts = self.class.get_task_hosts(task)
+        hosts = filter_hosts(options[:limit], task_hosts)
+
+        if hosts.empty?
+          puts Kdeploy::Banner.show_error("No hosts found for task: #{task}")
+          next
+        end
+
+        if options[:dry_run]
+          print_dry_run(hosts, task)
+          next
+        end
+
+        runner = Runner.new(hosts, self.class.kdeploy_tasks, parallel: options[:parallel])
+        results = runner.run(task)
+        print_results(results)
+      end
+    rescue StandardError => e
+      puts Kdeploy::Banner.show_error(e.message)
+      exit 1
     end
 
     private
 
-    def load_script(script)
-      raise Error, "Script file not found: #{script}" unless File.exist?(script)
+    def load_task_file(file)
+      unless File.exist?(file)
+        puts Kdeploy::Banner.show_error("Task file not found: #{file}")
+        exit 1
+      end
 
-      # 设置 inventory 路径
-      Config.inventory_path = Pathname.new(options[:inventory]) if options[:inventory]
-
-      # 加载并执行脚本
-      script_dir = File.dirname(File.expand_path(script))
-      dsl = DSL.new(script_dir)
-      dsl.instance_eval(File.read(script), script)
-      dsl.pipeline
+      self.class.class_eval(File.read(file), file)
     end
 
-    def source_paths
-      [File.join(File.dirname(__FILE__), 'templates')]
-    end
-  end
+    def filter_hosts(limit, task_hosts)
+      hosts = self.class.kdeploy_hosts.select { |name, _| task_hosts.include?(name) }
+      return hosts unless limit
 
-  # 统计子命令
-  class Stats < Thor
-    desc 'summary', 'Show deployment summary'
-    def summary
-      stats = Statistics.load
-      table = TTY::Table.new(
-        header: %w[Metric Value],
-        rows: [
-          ['Total Deployments', stats.total_deployments],
-          ['Successful Deployments', stats.successful_deployments],
-          ['Failed Deployments', stats.failed_deployments],
-          ['Average Duration', "#{stats.average_duration.round(2)}s"],
-          ['Total Tasks', stats.total_tasks],
-          ['Success Rate', "#{(stats.success_rate * 100).round(2)}%"]
-        ]
+      host_names = limit.split(',').map(&:strip)
+      hosts.select { |name, _| host_names.include?(name) }
+    end
+
+    def print_dry_run(hosts, task_name)
+      puts Kdeploy::Banner.show
+      pastel = Pastel.new
+      puts TTY::Box.frame(
+        'Showing what would be done without executing any commands',
+        title: { top_left: ' Dry Run Mode ', bottom_right: ' Kdeploy ' },
+        style: {
+          border: {
+            fg: :blue
+          }
+        }
       )
-      puts table.render(:unicode, padding: [0, 1])
+      puts
+
+      hosts.each do |name, config|
+        commands = self.class.kdeploy_tasks[task_name][:block].call
+        output = commands.map do |command|
+          case command[:type]
+          when :run
+            "#{pastel.green('>')} #{command[:command]}"
+          when :upload
+            "#{pastel.blue('>')} Upload: #{command[:source]} -> #{command[:destination]}"
+          end
+        end.join("\n")
+
+        puts TTY::Box.frame(
+          output,
+          title: { top_left: " #{name} (#{config[:ip]}) " },
+          style: {
+            border: {
+              fg: :yellow
+            }
+          }
+        )
+        puts
+      end
     end
 
-    desc 'deployments', 'Show deployment history'
-    def deployments
-      stats = Statistics.load
-      table = TTY::Table.new(
-        header: %w[ID Date Duration Status Tasks],
-        rows: stats.deployments.map do |d|
-          [d.id, d.date, "#{d.duration.round(2)}s", d.status, d.tasks.count]
+    def print_results(results)
+      puts Kdeploy::Banner.show
+      pastel = Pastel.new
+
+      results.each do |host, result|
+        status = if result[:status] == :success
+                   pastel.green('✓ Success')
+                 else
+                   pastel.red('✗ Failed')
+                 end
+
+        puts "#{pastel.bright_white(host)} - #{status}"
+
+        if result[:status] == :success
+          result[:output].each do |cmd|
+            puts "  #{pastel.bright_yellow('$')} #{cmd[:command]}"
+            if cmd[:output].is_a?(Hash)
+              puts "  #{cmd[:output][:stdout]}" unless cmd[:output][:stdout].empty?
+              puts "  #{pastel.red(cmd[:output][:stderr])}" unless cmd[:output][:stderr].empty?
+            elsif cmd[:output]
+              puts "  #{cmd[:output]}"
+            end
+            puts
+          end
+        else
+          puts "  #{pastel.red(result[:error])}"
         end
-      )
-      puts table.render(:unicode, padding: [0, 1])
-    end
-
-    desc 'tasks', 'Show task statistics'
-    def tasks
-      stats = Statistics.load
-      table = TTY::Table.new(
-        header: ['Task', 'Count', 'Avg Duration', 'Success Rate'],
-        rows: stats.task_stats.map do |name, stat|
-          [
-            name,
-            stat.count,
-            "#{stat.average_duration.round(2)}s",
-            "#{(stat.success_rate * 100).round(2)}%"
-          ]
-        end
-      )
-      puts table.render(:unicode, padding: [0, 1])
-    end
-
-    desc 'clear', 'Clear statistics'
-    def clear
-      return unless yes?('Are you sure you want to clear all statistics? (y/n)')
-
-      Statistics.clear
-      say 'Statistics cleared successfully!', :green
-    end
-
-    desc 'export [FILE]', 'Export statistics to JSON'
-    def export(file = 'kdeploy_stats.json')
-      stats = Statistics.load
-      File.write(file, JSON.pretty_generate(stats.to_h))
-      say "Statistics exported to #{file}", :green
+        puts
+      end
     end
   end
 end
