@@ -8,12 +8,12 @@
 \/  \/\__,_|\___| .__/|_|\___/ \__, |
                 |_|            |___/
 
-        ⚡ Lightweight Agentless Deployment Tool
-        🚀 Deploy with confidence, scale with ease
+  ⚡ Lightweight Agentless Deployment Tool
+  🚀 Deploy with confidence, scale with ease
 ```
 
-[![Gem Version](https://badge.fury.io/rb/kdeploy.svg)](https://badge.fury.io/rb/kdeploy)
-[![Build Status](https://github.com/kevin197011/kdeploy/workflows/CI/badge.svg)](https://github.com/kevin197011/kdeploy/actions)
+[![Gem Version](https://badge.fury.io/rb/kdeploy.svg)](https://rubygems.org/gems/kdeploy)
+[![CI](https://github.com/kevin197011/kdeploy/actions/workflows/ci.yml/badge.svg)](https://github.com/kevin197011/kdeploy/actions/workflows/ci.yml)
 
 Kdeploy 是一个现代化的轻量级 agentless 运维部署工具，类似于 Chef、Puppet 和 Ansible。它采用优雅的 Ruby DSL 语法，支持并发执行、统计分析和完整的部署生命周期管理。
 

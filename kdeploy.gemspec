@@ -6,7 +6,7 @@ Gem::Specification.new do |spec|
   spec.name = 'kdeploy'
   spec.version = Kdeploy::VERSION
   spec.authors = ['Kdeploy Team']
-  spec.email = ['team@kdeploy.dev']
+  spec.email = ['kevin197011@outlook.com']
 
   spec.summary = 'Lightweight agentless deployment tool with DSL, heredoc, and ERB template support'
   spec.description = <<~DESC
