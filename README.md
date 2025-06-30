@@ -12,6 +12,7 @@ A lightweight agentless deployment automation tool written in Ruby.
 - 🔄 **ERB Template Support**: Dynamic configuration generation
 - 🎯 **Role-based Deployment**: Target specific server roles
 - 🔍 **Dry Run Mode**: Preview tasks before execution
+- 🎨 **Color-coded Output**: Green for success, Red for errors, Yellow for warnings
 
 ## 📦 Installation
 
@@ -66,10 +67,42 @@ end
 3. Run the deployment:
 
 ```bash
+# Execute all tasks in deploy.rb
 $ kdeploy execute deploy.rb
+
+# Execute a specific task
+$ kdeploy execute deploy.rb deploy_web
 ```
 
 ## 📖 Usage Guide
+
+### Task Execution
+
+```bash
+# Execute all tasks in the file
+kdeploy execute deploy.rb
+
+# Execute a specific task
+kdeploy execute deploy.rb deploy_web
+
+# Execute with dry run (preview mode)
+kdeploy execute deploy.rb --dry-run
+
+# Execute on specific hosts
+kdeploy execute deploy.rb --limit web01,web02
+
+# Execute with custom parallel count
+kdeploy execute deploy.rb --parallel 5
+```
+
+When executing without specifying a task name (`kdeploy execute deploy.rb`), Kdeploy will:
+1. Execute all defined tasks in the file
+2. Run tasks in the order they were defined
+3. Show task name before each task execution
+4. Display color-coded output for better readability:
+   - 🟢 Green: Normal output and success messages
+   - 🔴 Red: Errors and failure messages
+   - 🟡 Yellow: Warnings and notices
 
 ### Host Definition
 
@@ -154,22 +187,6 @@ task :deploy_config do
     domain_name: "example.com",
     port: 3000
 end
-```
-
-### Command Line Options
-
-```bash
-# Execute with dry run
-kdeploy execute deploy.rb --dry-run
-
-# Limit to specific hosts
-kdeploy execute deploy.rb --limit web01,web02
-
-# Set parallel execution count
-kdeploy execute deploy.rb --parallel 5
-
-# Execute specific task
-kdeploy execute deploy.rb deploy_web
 ```
 
 ## 🔧 Development

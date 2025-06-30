@@ -159,7 +159,7 @@ module Kdeploy
 
         This is a deployment project created with Kdeploy.
 
-        ## Structure
+        ## 📁 Structure
 
         ```
         .
@@ -170,7 +170,7 @@ module Kdeploy
         └── README.md         # This file
         ```
 
-        ## Configuration Templates
+        ## 🔧 Configuration Templates
 
         The project uses ERB templates for dynamic configuration. For example, in `nginx.conf.erb`:
 
@@ -187,27 +187,57 @@ module Kdeploy
           worker_processes: 4
         ```
 
-        ## Usage
+        ## 🚀 Usage
+
+        ### Task Execution
 
         ```bash
-        # Show what would be done
-        kdeploy execute deploy.rb --dry-run
+        # Execute all tasks in the file
+        kdeploy execute deploy.rb
 
-        # Deploy to web servers
+        # Execute a specific task
         kdeploy execute deploy.rb deploy_web
 
-        # Backup database
-        kdeploy execute deploy.rb backup_db
+        # Execute with dry run (preview mode)
+        kdeploy execute deploy.rb --dry-run
 
-        # Run maintenance on web01
-        kdeploy execute deploy.rb maintenance
+        # Execute on specific hosts
+        kdeploy execute deploy.rb --limit web01,web02
 
-        # Update all hosts
-        kdeploy execute deploy.rb update
-
-        # Deploy to specific hosts
-        kdeploy execute deploy.rb deploy_web --limit web01,web02
+        # Execute with custom parallel count
+        kdeploy execute deploy.rb --parallel 5
         ```
+
+        When executing without specifying a task name (`kdeploy execute deploy.rb`), Kdeploy will:
+        1. Execute all defined tasks in the file
+        2. Run tasks in the order they were defined
+        3. Show task name before each task execution
+        4. Display color-coded output for better readability:
+           - 🟢 Green: Normal output and success messages
+           - 🔴 Red: Errors and failure messages
+           - 🟡 Yellow: Warnings and notices
+
+        ### Available Tasks
+
+        - **deploy_web**: Deploy and configure Nginx web servers
+          ```bash
+          kdeploy execute deploy.rb deploy_web
+          ```
+
+        - **backup_db**: Backup database to S3
+          ```bash
+          kdeploy execute deploy.rb backup_db
+          ```
+
+        - **maintenance**: Run maintenance on specific host
+          ```bash
+          kdeploy execute deploy.rb maintenance
+          ```
+
+        - **update**: Update all hosts
+          ```bash
+          kdeploy execute deploy.rb update
+          ```
       MD
     end
 
