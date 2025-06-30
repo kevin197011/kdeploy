@@ -38,13 +38,13 @@ gem 'kdeploy'
 And then execute:
 
 ```bash
-$ bundle install
+bundle install
 ```
 
 Or install it yourself as:
 
 ```bash
-$ gem install kdeploy
+gem install kdeploy
 ```
 
 ### Shell Completion
@@ -76,7 +76,7 @@ Now you can use Tab completion for:
 1. Initialize a new project:
 
 ```bash
-$ kdeploy init my-deployment
+kdeploy init my-deployment
 ```
 
 2. Edit the deployment configuration:
@@ -104,11 +104,7 @@ end
 3. Run the deployment:
 
 ```bash
-# Execute all tasks in deploy.rb
-$ kdeploy execute deploy.rb
-
-# Execute a specific task
-$ kdeploy execute deploy.rb deploy_web
+kdeploy execute deploy.rb
 ```
 
 ## 📖 Usage Guide
