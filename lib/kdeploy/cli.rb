@@ -175,61 +175,47 @@ module Kdeploy
       puts
 
       results.each do |host, result|
-        status = if result[:status] == :success
-                   pastel.green('✓ Success')
-                 else
-                   pastel.red('✗ Failed')
-                 end
-
+        status = result[:status] == :success ? pastel.green('✓ Success') : pastel.red('✗ Failed')
         puts "#{pastel.bright_white(host)} - #{status}"
 
         if result[:status] == :success
           result[:output].each do |cmd|
-            puts "  #{pastel.bright_yellow('$')} #{cmd[:command]}"
-            if cmd[:output].is_a?(Hash)
-              unless cmd[:output][:stdout].empty?
-                cmd[:output][:stdout].each_line do |line|
-                  line = line.strip
-                  next if line.empty?
+            # 显示命令
+            if cmd[:command].include?('<<') || cmd[:command].include?("\n")
+              # 多行命令显示
+              first_line = cmd[:command].lines.first.strip
+              puts "  #{pastel.bright_yellow('$')} #{first_line}"
+              cmd[:command].lines[1..].each do |line|
+                next if line.strip.empty?
 
-                  # 根据输出内容的特征来决定颜色
-                  colored_line = if line.match?(/error|fail|fatal|critical/i)
-                                   pastel.red(line)
-                                 elsif line.match?(/warn|deprecat|notice/i)
-                                   pastel.yellow(line)
-                                 else
-                                   pastel.green(line)
-                                 end
-                  puts "    #{colored_line}"
-                end
+                puts "  #{pastel.bright_yellow('>')} #{line.strip}"
               end
-              unless cmd[:output][:stderr].empty?
-                cmd[:output][:stderr].each_line do |line|
-                  puts "    #{pastel.red(line)}" unless line.strip.empty?
-                end
-              end
-            elsif cmd[:output]
-              cmd[:output].each_line do |line|
-                line = line.strip
-                next if line.empty?
+            else
+              # 单行命令显示
+              puts "  #{pastel.bright_yellow('$')} #{cmd[:command].strip}"
+            end
 
-                # 根据输出内容的特征来决定颜色
-                colored_line = if line.match?(/error|fail|fatal|critical/i)
-                                 pastel.red(line)
-                               elsif line.match?(/warn|deprecat|notice/i)
-                                 pastel.yellow(line)
-                               else
-                                 pastel.green(line)
-                               end
-                puts "    #{colored_line}"
+            # 显示输出
+            output = cmd[:output].is_a?(Hash) ? cmd[:output][:stdout] : cmd[:output].to_s
+            output.each_line do |line|
+              next if line.strip.empty?
+
+              puts "    #{line.rstrip}"
+            end
+
+            # 显示错误输出
+            if cmd[:output].is_a?(Hash) && !cmd[:output][:stderr].empty?
+              cmd[:output][:stderr].each_line do |line|
+                puts "    #{pastel.red(line.rstrip)}" unless line.strip.empty?
               end
             end
+
             puts
           end
         else
           puts "  #{pastel.red(result[:error])}"
+          puts
         end
-        puts
       end
     end
   end
