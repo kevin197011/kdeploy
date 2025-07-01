@@ -14,6 +14,7 @@
 ```
 
 A lightweight agentless deployment automation tool written in Ruby.
+
 [![Gem Version](https://badge.fury.io/rb/kdeploy.svg)](https://badge.fury.io/rb/kdeploy)
 [![Ruby](https://github.com/kevin197011/kdeploy/actions/workflows/gem-push.yml/badge.svg)](https://github.com/kevin197011/kdeploy/actions/workflows/gem-push.yml)
 
