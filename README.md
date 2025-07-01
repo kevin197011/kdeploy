@@ -15,7 +15,7 @@
 A lightweight agentless deployment automation tool written in Ruby.
 
 [![Gem Version](https://img.shields.io/gem/v/kdeploy)](https://rubygems.org/gems/kdeploy)
-[![Build Status](https://img.shields.io/github/actions/workflow/status/kevin197011/kdeploy/ruby.yml)](https://github.com/kevin197011/kdeploy/actions)
+[![Ruby](https://github.com/kevin197011/kdeploy/actions/workflows/gem-push.yml/badge.svg)](https://github.com/kevin197011/kdeploy/actions/workflows/gem-push.yml)
 
 ## 🌟 Features
 
