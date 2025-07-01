@@ -20,10 +20,10 @@ task :deploy_web, roles: :web do
 
   # Upload configuration using ERB template
   upload_template './config/nginx.conf.erb', '/etc/nginx/nginx.conf',
-    domain_name: 'example.com',
-    port: 3000,
-    worker_processes: 4,
-    worker_connections: 2048
+                  domain_name: 'example.com',
+                  port: 3000,
+                  worker_processes: 4,
+                  worker_connections: 2048
 
   # Upload static configuration
   upload './config/app.conf', '/etc/nginx/conf.d/app.conf'
