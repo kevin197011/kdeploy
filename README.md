@@ -2,11 +2,10 @@
 ```
           _            _
   /\ /\__| | ___ _ __ | | ___  _   _
- / //_/ _`|/ _ \ '_ \| |/ _ \| | | |
+ / //_/ _` |/ _ \ '_ \| |/ _ \| | | |
 / __ \ (_| |  __/ |_) | | (_) | |_| |
 \/  \/\__,_|\___| .__/|_|\___/ \__, |
                 |_|            |___/
-
 
 ⚡ Lightweight Agentless Deployment Tool
 🚀 Deploy with confidence, scale with ease
@@ -15,8 +14,8 @@
 
 A lightweight agentless deployment automation tool written in Ruby.
 
-[![Gem Version](https://badge.fury.io/rb/kdeploy.svg)](https://rubygems.org/gems/kdeploy)
-[![Build Status](https://github.com/kevin197011/kdeploy/workflows/Ruby/badge.svg)](https://github.com/kevin197011/kdeploy/actions)
+[![Gem Version](https://img.shields.io/gem/v/kdeploy)](https://rubygems.org/gems/kdeploy)
+[![Build Status](https://img.shields.io/github/actions/workflow/status/kevin197011/kdeploy/ruby.yml)](https://github.com/kevin197011/kdeploy/actions)
 
 ## 🌟 Features
 
