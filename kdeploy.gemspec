@@ -5,7 +5,7 @@ require_relative 'lib/kdeploy/version'
 Gem::Specification.new do |spec|
   spec.name = 'kdeploy'
   spec.version = Kdeploy::VERSION
-  spec.authors = ['Norton']
+  spec.authors = ['Kk']
   spec.email = ['kevin197011@outlook.com']
 
   spec.summary = 'A lightweight agentless deployment tool'
