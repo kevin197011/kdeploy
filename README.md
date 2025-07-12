@@ -108,6 +108,11 @@ end
 ```bash
 kdeploy execute deploy.rb
 ```
+4. demo:
+
+```bash
+https://github.com/kevin197011/kdeploy-app
+```
 
 ## 📖 Usage Guide
 
