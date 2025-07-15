@@ -230,13 +230,12 @@ module Kdeploy
         changed_str = pastel.yellow("changed=#{changed.to_s.ljust(3)}")
         failed_str = pastel.red("failed=#{failed.to_s.ljust(3)}")
         line = "#{host.ljust(max_host_len)} : #{ok_str}  #{changed_str}  #{failed_str}"
-        case result[:status]
-        when :success
-          puts pastel.green(line)
-        when :changed
-          puts pastel.yellow(line)
-        else
+        if failed.positive?
           puts pastel.red(line)
+        elsif ok.positive? && failed.zero?
+          puts pastel.green(line)
+        else
+          puts line
         end
       end
     end

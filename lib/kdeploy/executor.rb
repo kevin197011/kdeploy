@@ -24,12 +24,10 @@ module Kdeploy
             raise "Could not execute command: #{command}" unless success
 
             channel.on_data do |_ch, data|
-              print data # 实时输出
               stdout << data
             end
 
             channel.on_extended_data do |_ch, _type, data|
-              print data # 实时输出
               stderr << data
             end
           end

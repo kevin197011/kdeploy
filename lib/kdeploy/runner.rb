@@ -50,6 +50,13 @@ module Kdeploy
                 puts pastel.cyan("  [run]    #{command[:command].lines.first.strip}")
                 command[:command].lines[1..].each { |line| puts "           > #{line.strip}" unless line.strip.empty? }
                 output = executor.execute(command[:command])
+                # 统一输出命令结果
+                if output[:stdout] && !output[:stdout].empty?
+                  output[:stdout].each_line { |line| puts "    #{line.rstrip}" unless line.strip.empty? }
+                end
+                if output[:stderr] && !output[:stderr].empty?
+                  output[:stderr].each_line { |line| puts pastel.red("    #{line.rstrip}") unless line.strip.empty? }
+                end
                 result[:output] << { command: command[:command], output: output }
               when :upload
                 pastel = Pastel.new
