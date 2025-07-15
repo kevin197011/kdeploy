@@ -94,12 +94,16 @@ host "web02", user: "ubuntu", ip: "10.0.0.2", key: "~/.ssh/id_rsa"
 role :web, %w[web01 web02]
 
 # Define tasks
+# 推荐多行命令用 heredoc（run <<~SHELL）
 task :deploy, roles: :web do
-  run "sudo systemctl stop nginx"
+  run <<~SHELL
+    sudo systemctl stop nginx
+    echo "Deploying..."
+    sudo systemctl start nginx
+  SHELL
   upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
     domain_name: "example.com",
     port: 3000
-  run "sudo systemctl start nginx"
 end
 ```
 
@@ -108,7 +112,8 @@ end
 ```bash
 kdeploy execute deploy.rb
 ```
-4. demo:
+
+4. Demo:
 
 ```bash
 https://github.com/kevin197011/kdeploy-app
@@ -131,18 +136,9 @@ kdeploy execute deploy.rb --dry-run
 # Execute on specific hosts
 kdeploy execute deploy.rb --limit web01,web02
 
-# Execute with custom parallel count
-kdeploy execute deploy.rb --parallel 5
+# Execute with custom parallel count (default: 10)
+kdeploy execute deploy.rb --parallel 10
 ```
-
-When executing without specifying a task name (`kdeploy execute deploy.rb`), Kdeploy will:
-1. Execute all defined tasks in the file
-2. Run tasks in the order they were defined
-3. Show task name before each task execution
-4. Display color-coded output for better readability:
-   - 🟢 Green: Normal output and success messages
-   - 🔴 Red: Errors and failure messages
-   - 🟡 Yellow: Warnings and notices
 
 ### Host Definition
 
@@ -190,15 +186,19 @@ end
 
 # Role-based task
 task :deploy, roles: :web do
-  run "sudo systemctl stop nginx"
+  run <<~SHELL
+    sudo systemctl stop nginx
+    sudo systemctl start nginx
+  SHELL
   upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
-  run "sudo systemctl start nginx"
 end
 
 # Host-specific task
 task :maintenance, on: %w[web01] do
-  run "sudo apt-get update"
-  run "sudo apt-get upgrade -y"
+  run <<~SHELL
+    sudo apt-get update
+    sudo apt-get upgrade -y
+  SHELL
 end
 ```
 
