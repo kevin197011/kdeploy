@@ -188,7 +188,12 @@ module Kdeploy
         puts pastel.bright_white("\n#{host.ljust(24)} : #{status}")
 
         if %i[success changed].include?(result[:status])
+          shown = {}
           result[:output].each do |step|
+            key = [step[:command], step[:output]].hash
+            next if shown[key]
+
+            shown[key] = true
             if step[:command].to_s.start_with?('upload:')
               puts pastel.green("  [upload] #{step[:command].sub('upload: ', '')}")
             elsif step[:command].to_s.start_with?('upload_template:')
@@ -197,11 +202,11 @@ module Kdeploy
               puts pastel.cyan("  [run]    #{step[:command].to_s.lines.first.strip}")
               if step[:output].is_a?(Hash) && step[:output][:stdout]
                 step[:output][:stdout].each_line do |line|
-                  puts "           > #{line.strip}" unless line.strip.empty?
+                  puts "    #{line.rstrip}" unless line.strip.empty?
                 end
               elsif step[:output].is_a?(String)
                 step[:output].each_line do |line|
-                  puts "           > #{line.strip}" unless line.strip.empty?
+                  puts "    #{line.rstrip}" unless line.strip.empty?
                 end
               end
             end
@@ -222,13 +227,17 @@ module Kdeploy
       # summary
       puts pastel.cyan("\nPLAY RECAP #{'*' * 64}")
       max_host_len = results.keys.map(&:length).max || 16
-      results.each do |host, result|
+      ok_w = 7
+      changed_w = 11
+      failed_w = 10
+      results.keys.sort.each do |host|
+        result = results[host]
         ok = %i[success changed].include?(result[:status]) ? result[:output].size : 0
         failed = result[:status] == :failed ? 1 : 0
         changed = result[:status] == :changed ? result[:output].size : 0
-        ok_str = pastel.green("ok=#{ok.to_s.ljust(3)}")
-        changed_str = pastel.yellow("changed=#{changed.to_s.ljust(3)}")
-        failed_str = pastel.red("failed=#{failed.to_s.ljust(3)}")
+        ok_str = pastel.green("ok=#{ok.to_s.ljust(ok_w - 3)}")
+        changed_str = pastel.yellow("changed=#{changed.to_s.ljust(changed_w - 8)}")
+        failed_str = pastel.red("failed=#{failed.to_s.ljust(failed_w - 7)}")
         line = "#{host.ljust(max_host_len)} : #{ok_str}  #{changed_str}  #{failed_str}"
         if failed.positive?
           puts pastel.red(line)

@@ -55,7 +55,7 @@ module Kdeploy
                   output[:stdout].each_line { |line| puts "    #{line.rstrip}" unless line.strip.empty? }
                 end
                 if output[:stderr] && !output[:stderr].empty?
-                  output[:stderr].each_line { |line| puts pastel.cyan("    #{line.rstrip}") unless line.strip.empty? }
+                  output[:stderr].each_line { |line| puts pastel.green("    #{line.rstrip}") unless line.strip.empty? }
                 end
                 result[:output] << { command: command[:command], output: output }
               when :upload
