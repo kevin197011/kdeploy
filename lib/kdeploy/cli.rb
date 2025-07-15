@@ -79,6 +79,13 @@ module Kdeploy
     method_option :parallel, type: :numeric, default: 5, desc: 'Number of parallel executions'
     method_option :dry_run, type: :boolean, desc: 'Show what would be done'
     def execute(task_file, task_name = nil)
+      # 只在最前面输出一次 banner
+      @banner_printed ||= false
+      unless @banner_printed
+        puts Kdeploy::Banner.show
+        @banner_printed = true
+      end
+
       load_task_file(task_file)
 
       tasks_to_run = if task_name
@@ -169,31 +176,26 @@ module Kdeploy
     end
 
     def print_results(results, task_name)
-      puts Kdeploy::Banner.show
       pastel = Pastel.new
-
-      puts "#{pastel.bright_cyan('Task:')} #{pastel.bright_white(task_name)}"
-      puts
+      puts pastel.bright_cyan("\n=== Task: #{task_name} ===\n")
 
       results.each do |host, result|
         status = result[:status] == :success ? pastel.green('✓ Success') : pastel.red('✗ Failed')
-        puts "#{pastel.bright_white(host)} - #{status}"
+        puts pastel.bright_white("[#{host}] #{status}")
 
         if result[:status] == :success
           result[:output].each do |cmd|
             # 显示命令
             if cmd[:command].include?('<<') || cmd[:command].include?("\n")
-              # 多行命令显示
               first_line = cmd[:command].lines.first.strip
-              puts "  #{pastel.bright_yellow('$')} #{first_line}"
+              puts pastel.bright_yellow("    $ #{first_line}")
               cmd[:command].lines[1..].each do |line|
                 next if line.strip.empty?
 
-                puts "  #{pastel.bright_yellow('>')} #{line.strip}"
+                puts pastel.bright_yellow("    > #{line.strip}")
               end
             else
-              # 单行命令显示
-              puts "  #{pastel.bright_yellow('$')} #{cmd[:command].strip}"
+              puts pastel.bright_yellow("    $ #{cmd[:command].strip}")
             end
 
             # 显示输出
@@ -201,20 +203,20 @@ module Kdeploy
             output.each_line do |line|
               next if line.strip.empty?
 
-              puts "    #{line.rstrip}"
+              puts pastel.white("      #{line.rstrip}")
             end
 
             # 显示错误输出
             if cmd[:output].is_a?(Hash) && !cmd[:output][:stderr].empty?
               cmd[:output][:stderr].each_line do |line|
-                puts "    #{pastel.red(line.rstrip)}" unless line.strip.empty?
+                puts pastel.red("      #{line.rstrip}") unless line.strip.empty?
               end
             end
 
             puts
           end
         else
-          puts "  #{pastel.red(result[:error])}"
+          puts pastel.red("    #{result[:error]}")
           puts
         end
       end
