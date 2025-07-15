@@ -118,7 +118,8 @@ module Kdeploy
         exit 1
       end
 
-      self.class.class_eval(File.read(file), file)
+      # 用 instance_eval 并传递顶层 binding，兼容 heredoc
+      self.class.module_eval(File.read(file), file)
     end
 
     def filter_hosts(limit, task_hosts)

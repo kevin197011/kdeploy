@@ -24,12 +24,16 @@ module Kdeploy
           task[:block].call.each do |command|
             case command[:type]
             when :run
+              puts "[#{name}] $ #{command[:command].lines.first.strip}" # 实时输出主机和命令
+              command[:command].lines[1..].each { |line| puts "[#{name}] > #{line.strip}" unless line.strip.empty? }
               output = executor.execute(command[:command])
               result[:output] << { command: command[:command], output: output }
             when :upload
+              puts "[#{name}] upload: #{command[:source]} -> #{command[:destination]}"
               executor.upload(command[:source], command[:destination])
               result[:output] << { command: "upload: #{command[:source]} -> #{command[:destination]}" }
             when :upload_template
+              puts "[#{name}] upload_template: #{command[:source]} -> #{command[:destination]}"
               executor.upload_template(command[:source], command[:destination], command[:variables])
               result[:output] << { command: "upload_template: #{command[:source]} -> #{command[:destination]}" }
             end
