@@ -19,9 +19,11 @@ end
 desc 'Clean up generated files'
 task :clean do
   FileUtils.rm_f Dir.glob('*.gem')
+  FileUtils.rm_f Dir.glob('pkg')
 end
 
 task :push do
+  Rake::Task['clean'].invoke
   system 'rubocop -A'
   system 'git add .'
   system "git commit -m 'Update #{Time.now}'"

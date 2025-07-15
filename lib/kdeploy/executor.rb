@@ -11,6 +11,7 @@ module Kdeploy
       @ip = host_config[:ip]
       @password = host_config[:password]
       @key = host_config[:key]
+      @port = host_config[:port] # 新增端口支持
     end
 
     def execute(command)
@@ -66,7 +67,7 @@ module Kdeploy
       elsif @key
         options[:keys] = [@key]
       end
-
+      options[:port] = @port if @port # 新增端口传递
       options
     end
   end

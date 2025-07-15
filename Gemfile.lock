@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    kdeploy (1.0.3)
+    kdeploy (1.0.4)
       concurrent-ruby (~> 1.2)
       net-scp (~> 4.0)
       net-ssh (~> 7.0)
