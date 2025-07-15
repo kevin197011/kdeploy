@@ -19,15 +19,22 @@ module Kdeploy
         stdout = String.new
         stderr = String.new
 
-        ssh.exec!(command) do |_channel, stream, data|
-          case stream
-          when :stdout
-            stdout << data
-          when :stderr
-            stderr << data
+        ssh.open_channel do |channel|
+          channel.exec(command) do |_ch, success|
+            raise "Could not execute command: #{command}" unless success
+
+            channel.on_data do |_ch, data|
+              print data # 实时输出
+              stdout << data
+            end
+
+            channel.on_extended_data do |_ch, _type, data|
+              print data # 实时输出
+              stderr << data
+            end
           end
         end
-
+        ssh.loop
         {
           stdout: stdout.strip,
           stderr: stderr.strip,
