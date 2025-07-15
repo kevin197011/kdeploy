@@ -49,7 +49,10 @@ module Kdeploy
                 puts pastel.bright_white("\n#{name.ljust(24)} : ")
                 puts pastel.cyan("  [run]    #{command[:command].lines.first.strip}")
                 command[:command].lines[1..].each { |line| puts "           > #{line.strip}" unless line.strip.empty? }
+                t1 = Time.now
                 output = executor.execute(command[:command])
+                t2 = Time.now
+                duration = t2 - t1
                 # 统一输出命令结果
                 if output[:stdout] && !output[:stdout].empty?
                   output[:stdout].each_line { |line| puts "    #{line.rstrip}" unless line.strip.empty? }
@@ -57,19 +60,26 @@ module Kdeploy
                 if output[:stderr] && !output[:stderr].empty?
                   output[:stderr].each_line { |line| puts pastel.green("    #{line.rstrip}") unless line.strip.empty? }
                 end
-                result[:output] << { command: command[:command], output: output }
+                result[:output] << { command: command[:command], output: output, duration: duration, type: :run }
               when :upload
                 pastel = Pastel.new
                 puts pastel.bright_white("\n#{name.ljust(24)} : ")
                 puts pastel.green("  [upload] #{command[:source]} -> #{command[:destination]}")
+                t1 = Time.now
                 executor.upload(command[:source], command[:destination])
-                result[:output] << { command: "upload: #{command[:source]} -> #{command[:destination]}" }
+                t2 = Time.now
+                duration = t2 - t1
+                result[:output] << { command: "upload: #{command[:source]} -> #{command[:destination]}", duration: duration, type: :upload }
               when :upload_template
                 pastel = Pastel.new
                 puts pastel.bright_white("\n#{name.ljust(24)} : ")
                 puts pastel.yellow("  [template] #{command[:source]} -> #{command[:destination]}")
-                executor.upload_template(command[:source], command[:destination], command[:variables])
-                result[:output] << { command: "upload_template: #{command[:source]} -> #{command[:destination]}" }
+                t1 = Time.now
+                executor.upload_template(command[:source], command[:destination], command[:vars])
+                t2 = Time.now
+                duration = t2 - t1
+                result[:output] << { command: "upload_template: #{command[:source]} -> #{command[:destination]}", duration: duration,
+                                     type: :upload_template }
               end
             end
           end
