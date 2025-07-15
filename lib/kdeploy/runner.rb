@@ -4,7 +4,7 @@ require 'concurrent'
 
 module Kdeploy
   class Runner
-    def initialize(hosts, tasks, parallel: 5)
+    def initialize(hosts, tasks, parallel: 10)
       @hosts = hosts
       @tasks = tasks
       @parallel = parallel
