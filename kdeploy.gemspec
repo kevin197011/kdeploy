@@ -12,7 +12,7 @@ Gem::Specification.new do |spec|
   spec.description = 'Kdeploy is a Ruby-based deployment automation tool that provides agentless remote deployment solutions with an elegant DSL'
   spec.homepage = 'https://github.com/kevin197011/kdeploy'
   spec.license = 'MIT'
-  spec.required_ruby_version = '>= 3.1.0'
+  spec.required_ruby_version = '>= 2.7.0'
 
   spec.metadata = {
     'homepage_uri' => 'https://github.com/kevin197011/kdeploy',

@@ -19,7 +19,7 @@ end
 desc 'Clean up generated files'
 task :clean do
   FileUtils.rm_f Dir.glob('*.gem')
-  FileUtils.rm_f Dir.glob('pkg')
+  FileUtils.rm_f 'pkg'
 end
 
 task :push do
