@@ -51,6 +51,6 @@ main() {
   kdeploy execute deploy.rb deploy_web
 }
 
-main
+main "$@"
 
 echo "\n全部完成！你可以用 kdeploy --version 查看版本。"
