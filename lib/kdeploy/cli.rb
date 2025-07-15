@@ -194,22 +194,32 @@ module Kdeploy
             case type
             when :upload
               puts pastel.green('  === Upload ===')
+              steps.each do |step|
+                key = [step[:command], type].hash
+                next if shown[key]
+
+                shown[key] = true
+                duration_str = step[:duration] ? pastel.dim(" [#{'%.2f' % step[:duration]}s]") : ''
+                puts pastel.green("    [upload] #{step[:command].sub('upload: ', '')}#{duration_str}")
+              end
             when :upload_template
               puts pastel.yellow('  === Template ===')
+              steps.each do |step|
+                key = [step[:command], type].hash
+                next if shown[key]
+
+                shown[key] = true
+                duration_str = step[:duration] ? pastel.dim(" [#{'%.2f' % step[:duration]}s]") : ''
+                puts pastel.yellow("    [template] #{step[:command].sub('upload_template: ', '')}#{duration_str}")
+              end
             when :run
               puts pastel.cyan('  === Run ===')
-            end
-            steps.each do |step|
-              key = [step[:command], step[:output]].hash
-              next if shown[key]
+              steps.each do |step|
+                key = [step[:command], type].hash
+                next if shown[key]
 
-              shown[key] = true
-              duration_str = step[:duration] ? pastel.dim(" [#{'%.2f' % step[:duration]}s]") : ''
-              if step[:command].to_s.start_with?('upload:')
-                puts pastel.green("    [upload] #{step[:command].sub('upload: ', '')}#{duration_str}")
-              elsif step[:command].to_s.start_with?('upload_template:')
-                puts pastel.yellow("    [template] #{step[:command].sub('upload_template: ', '')}#{duration_str}")
-              else
+                shown[key] = true
+                duration_str = step[:duration] ? pastel.dim(" [#{'%.2f' % step[:duration]}s]") : ''
                 puts pastel.cyan("    [run]    #{step[:command].to_s.lines.first.strip}#{duration_str}")
                 if step[:output].is_a?(Hash) && step[:output][:stdout]
                   step[:output][:stdout].each_line do |line|
