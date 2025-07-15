@@ -221,11 +221,15 @@ module Kdeploy
 
       # summary
       puts pastel.cyan("\nPLAY RECAP #{'*' * 64}")
+      max_host_len = results.keys.map(&:length).max || 16
       results.each do |host, result|
         ok = %i[success changed].include?(result[:status]) ? result[:output].size : 0
         failed = result[:status] == :failed ? 1 : 0
         changed = result[:status] == :changed ? result[:output].size : 0
-        puts "#{host.ljust(24)} : ok=#{ok}    changed=#{changed}    failed=#{failed}"
+        ok_str = pastel.green("ok=#{ok.to_s.ljust(3)}")
+        changed_str = pastel.yellow("changed=#{changed.to_s.ljust(3)}")
+        failed_str = pastel.red("failed=#{failed.to_s.ljust(3)}")
+        puts "#{host.ljust(max_host_len)} : #{ok_str}  #{changed_str}  #{failed_str}"
       end
     end
   end
