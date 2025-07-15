@@ -76,7 +76,7 @@ module Kdeploy
 
     desc 'execute TASK_FILE [TASK]', 'Execute deployment tasks from file'
     method_option :limit, type: :string, desc: 'Limit to specific hosts (comma-separated)'
-    method_option :parallel, type: :numeric, default: 5, desc: 'Number of parallel executions'
+    method_option :parallel, type: :numeric, default: 10, desc: 'Number of parallel executions'
     method_option :dry_run, type: :boolean, desc: 'Show what would be done'
     def execute(task_file, task_name = nil)
       # 只在最前面输出一次 banner
