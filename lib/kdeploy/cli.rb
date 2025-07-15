@@ -221,13 +221,16 @@ module Kdeploy
                 shown[key] = true
                 duration_str = step[:duration] ? pastel.dim(" [#{'%.2f' % step[:duration]}s]") : ''
                 puts pastel.cyan("    [run]    #{step[:command].to_s.lines.first.strip}#{duration_str}")
+                # 多行命令内容高亮
+                cmd_lines = step[:command].to_s.lines[1..].map(&:strip).reject(&:empty?)
+                cmd_lines.each { |line| puts pastel.cyan("           > #{line}") } if cmd_lines.any?
                 if step[:output].is_a?(Hash) && step[:output][:stdout]
                   step[:output][:stdout].each_line do |line|
-                    puts "        #{line.rstrip}" unless line.strip.empty?
+                    puts pastel.green("        #{line.rstrip}") unless line.strip.empty?
                   end
                 elsif step[:output].is_a?(String)
                   step[:output].each_line do |line|
-                    puts "        #{line.rstrip}" unless line.strip.empty?
+                    puts pastel.green("        #{line.rstrip}") unless line.strip.empty?
                   end
                 end
               end
