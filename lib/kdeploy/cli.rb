@@ -177,48 +177,55 @@ module Kdeploy
 
     def print_results(results, task_name)
       pastel = Pastel.new
-      puts pastel.bright_cyan("\n=== Task: #{task_name} ===\n")
+      puts pastel.cyan("\nPLAY [#{task_name}] " + ('*' * 64))
 
       results.each do |host, result|
-        status = result[:status] == :success ? pastel.green('✓ Success') : pastel.red('✗ Failed')
-        puts pastel.bright_white("[#{host}] #{status}")
+        status = case result[:status]
+                 when :success then pastel.green('ok')
+                 when :changed then pastel.yellow('changed')
+                 else pastel.red('failed')
+                 end
+        puts pastel.bright_white("\n#{host.ljust(24)} : #{status}")
 
-        if result[:status] == :success
-          result[:output].each do |cmd|
-            # 显示命令
-            if cmd[:command].include?('<<') || cmd[:command].include?("\n")
-              first_line = cmd[:command].lines.first.strip
-              puts pastel.bright_yellow("    $ #{first_line}")
-              cmd[:command].lines[1..].each do |line|
-                next if line.strip.empty?
-
-                puts pastel.bright_yellow("    > #{line.strip}")
-              end
+        if %i[success changed].include?(result[:status])
+          result[:output].each do |step|
+            if step[:command].to_s.start_with?('upload:')
+              puts pastel.green("  [upload] #{step[:command].sub('upload: ', '')}")
+            elsif step[:command].to_s.start_with?('upload_template:')
+              puts pastel.yellow("  [template] #{step[:command].sub('upload_template: ', '')}")
             else
-              puts pastel.bright_yellow("    $ #{cmd[:command].strip}")
-            end
-
-            # 显示输出
-            output = cmd[:output].is_a?(Hash) ? cmd[:output][:stdout] : cmd[:output].to_s
-            output.each_line do |line|
-              next if line.strip.empty?
-
-              puts pastel.white("      #{line.rstrip}")
-            end
-
-            # 显示错误输出
-            if cmd[:output].is_a?(Hash) && !cmd[:output][:stderr].empty?
-              cmd[:output][:stderr].each_line do |line|
-                puts pastel.red("      #{line.rstrip}") unless line.strip.empty?
+              puts pastel.cyan("  [run]    #{step[:command].to_s.lines.first.strip}")
+              if step[:output].is_a?(Hash) && step[:output][:stdout]
+                step[:output][:stdout].each_line do |line|
+                  puts "           > #{line.strip}" unless line.strip.empty?
+                end
+              elsif step[:output].is_a?(String)
+                step[:output].each_line do |line|
+                  puts "           > #{line.strip}" unless line.strip.empty?
+                end
               end
             end
-
-            puts
           end
         else
-          puts pastel.red("    #{result[:error]}")
-          puts
+          # 失败主机高亮错误
+          err = result[:error] || (if result[:output].is_a?(Array)
+                                     result[:output].map do |o|
+                                       o[:output][:stderr] if o[:output].is_a?(Hash)
+                                     end.compact.join("\n")
+                                   else
+                                     result[:output].to_s
+                                   end)
+          puts pastel.red("  ERROR: #{err}")
         end
+      end
+
+      # summary
+      puts pastel.cyan("\nPLAY RECAP #{'*' * 64}")
+      results.each do |host, result|
+        ok = %i[success changed].include?(result[:status]) ? result[:output].size : 0
+        failed = result[:status] == :failed ? 1 : 0
+        changed = result[:status] == :changed ? result[:output].size : 0
+        puts "#{host.ljust(24)} : ok=#{ok}    changed=#{changed}    failed=#{failed}"
       end
     end
   end
