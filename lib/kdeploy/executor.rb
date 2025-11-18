@@ -13,9 +13,14 @@ module Kdeploy
       @password = host_config[:password]
       @key = host_config[:key]
       @port = host_config[:port] # 新增端口支持
+      @use_sudo = host_config[:use_sudo] || false
+      @sudo_password = host_config[:sudo_password]
     end
 
-    def execute(command)
+    def execute(command, use_sudo: nil)
+      use_sudo = @use_sudo if use_sudo.nil?
+      command = wrap_with_sudo(command) if use_sudo
+
       Net::SSH.start(@ip, @user, ssh_options) do |ssh|
         execute_command_on_ssh(ssh, command)
       end
@@ -98,6 +103,20 @@ module Kdeploy
 
     def add_port_option(options)
       options[:port] = @port if @port
+    end
+
+    def wrap_with_sudo(command)
+      # 如果命令已经以 sudo 开头，不重复添加
+      return command if command.strip.start_with?('sudo')
+
+      if @sudo_password
+        # 使用 echo 和管道传递密码给 sudo -S
+        # 注意：密码会出现在进程列表中，建议使用 NOPASSWD 配置
+        escaped_password = @sudo_password.gsub("'", "'\"'\"'").gsub('$', '\\$').gsub('`', '\\`')
+        "echo '#{escaped_password}' | sudo -S #{command}"
+      else
+        "sudo #{command}"
+      end
     end
   end
 end

@@ -31,6 +31,8 @@ module Kdeploy
         # Define hosts
         host 'web01', user: 'ubuntu', ip: '10.0.0.1', key: '~/.ssh/id_rsa'
         host 'web02', user: 'ubuntu', ip: '10.0.0.2', key: '~/.ssh/id_rsa'
+        # Example: Host with sudo enabled (all commands automatically use sudo)
+        # host 'web03', user: 'ubuntu', ip: '10.0.0.3', key: '~/.ssh/id_rsa', use_sudo: true
         host 'db01', user: 'root', ip: '10.0.0.3', key: '~/.ssh/id_rsa'
 
         # Define roles
@@ -39,6 +41,8 @@ module Kdeploy
 
         # Define deployment task for web servers
         task :deploy_web, roles: :web do
+          # Example: Using sudo option for specific command
+          # run "systemctl stop nginx", sudo: true
           run <<~SHELL
             sudo systemctl stop nginx
             echo "Deploying..."
@@ -78,6 +82,8 @@ module Kdeploy
 
         # Define task for all hosts
         task :update do
+          # Example: Using sudo option for specific command
+          # run "apt-get update && apt-get upgrade -y", sudo: true
           run <<~SHELL
             sudo apt-get update && sudo apt-get upgrade -y
           SHELL
@@ -188,6 +194,22 @@ module Kdeploy
           domain_name: "example.com",
           worker_processes: 4
         ```
+
+        ## 🔐 Using Sudo
+
+        Kdeploy supports sudo execution in two ways:
+
+        1. **Host-level configuration** (all commands automatically use sudo):
+        ```ruby
+        host 'web01', user: 'ubuntu', ip: '10.0.0.1', key: '~/.ssh/id_rsa', use_sudo: true
+        ```
+
+        2. **Command-level configuration** (only specific commands use sudo):
+        ```ruby
+        run "systemctl restart nginx", sudo: true
+        ```
+
+        See the main documentation for more details on sudo usage.
 
         ## 🚀 Usage
 

@@ -259,6 +259,13 @@ host "web03",
   ip: "10.0.0.3",
   key: "~/.ssh/id_rsa",
   port: 2222
+
+# Host with sudo (all commands automatically use sudo)
+host "web04",
+  user: "ubuntu",
+  ip: "10.0.0.4",
+  key: "~/.ssh/id_rsa",
+  use_sudo: true
 ```
 
 #### Host Configuration Options
@@ -270,6 +277,8 @@ host "web03",
 | `key` | String | No* | Path to SSH private key file |
 | `password` | String | No* | SSH password |
 | `port` | Integer | No | SSH port (default: 22) |
+| `use_sudo` | Boolean | No | Automatically use sudo for all commands (default: false) |
+| `sudo_password` | String | No | sudo password (if password authentication is required) |
 
 \* Either `key` or `password` is required for authentication.
 
@@ -393,6 +402,44 @@ run <<~SHELL
   sudo systemctl restart puma
 SHELL
 ```
+
+**Parameters:**
+- `command`: Command string to execute
+- `sudo`: Boolean, whether to execute this command with sudo (optional, default: nil, inherits host configuration)
+
+**Using sudo:**
+
+1. **At host level** (all commands automatically use sudo):
+```ruby
+host "web01",
+  user: "ubuntu",
+  ip: "10.0.0.1",
+  key: "~/.ssh/id_rsa",
+  use_sudo: true  # All commands automatically use sudo
+```
+
+2. **At command level** (only specific commands use sudo):
+```ruby
+task :deploy do
+  run "systemctl restart nginx", sudo: true  # Only this command uses sudo
+  run "echo 'Deployed'"  # This command does not use sudo
+end
+```
+
+3. **With sudo password** (if password authentication is required):
+```ruby
+host "web01",
+  user: "ubuntu",
+  ip: "10.0.0.1",
+  key: "~/.ssh/id_rsa",
+  use_sudo: true,
+  sudo_password: "your-sudo-password"  # Only configure if password is required
+```
+
+**Notes:**
+- If the command already starts with `sudo`, the tool will not add it again
+- It's recommended to use NOPASSWD sudo configuration to avoid storing passwords in configuration files
+- Command-level `sudo` option overrides host-level `use_sudo` configuration
 
 **Best Practice**: Use heredoc (`<<~SHELL`) for multi-line commands to improve readability.
 

@@ -259,6 +259,13 @@ host "web03",
   ip: "10.0.0.3",
   key: "~/.ssh/id_rsa",
   port: 2222
+
+# 使用 sudo 的主机（所有命令自动使用 sudo）
+host "web04",
+  user: "ubuntu",
+  ip: "10.0.0.4",
+  key: "~/.ssh/id_rsa",
+  use_sudo: true
 ```
 
 #### 主机配置选项
@@ -270,6 +277,8 @@ host "web03",
 | `key` | String | 否* | SSH 私钥文件路径 |
 | `password` | String | 否* | SSH 密码 |
 | `port` | Integer | 否 | SSH 端口（默认: 22） |
+| `use_sudo` | Boolean | 否 | 是否对所有命令自动使用 sudo（默认: false） |
+| `sudo_password` | String | 否 | sudo 密码（如果需要密码验证） |
 
 \* 身份验证需要 `key` 或 `password` 之一。
 
@@ -393,6 +402,44 @@ run <<~SHELL
   sudo systemctl restart puma
 SHELL
 ```
+
+**参数:**
+- `command`: 要执行的命令字符串
+- `sudo`: 布尔值，是否使用 sudo 执行此命令（可选，默认: nil，继承主机配置）
+
+**sudo 使用方式:**
+
+1. **在主机级别配置**（所有命令自动使用 sudo）:
+```ruby
+host "web01",
+  user: "ubuntu",
+  ip: "10.0.0.1",
+  key: "~/.ssh/id_rsa",
+  use_sudo: true  # 所有命令自动使用 sudo
+```
+
+2. **在命令级别配置**（仅特定命令使用 sudo）:
+```ruby
+task :deploy do
+  run "systemctl restart nginx", sudo: true  # 仅此命令使用 sudo
+  run "echo 'Deployed'"  # 此命令不使用 sudo
+end
+```
+
+3. **使用 sudo 密码**（如果需要密码验证）:
+```ruby
+host "web01",
+  user: "ubuntu",
+  ip: "10.0.0.1",
+  key: "~/.ssh/id_rsa",
+  use_sudo: true,
+  sudo_password: "your-sudo-password"  # 仅在需要密码时配置
+```
+
+**注意:**
+- 如果命令已经以 `sudo` 开头，工具不会重复添加
+- 推荐使用 NOPASSWD 配置 sudo，避免在配置文件中存储密码
+- 命令级别的 `sudo` 选项会覆盖主机级别的 `use_sudo` 配置
 
 **最佳实践**: 对多行命令使用 heredoc (`<<~SHELL`) 以提高可读性。
 

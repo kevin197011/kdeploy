@@ -63,9 +63,9 @@ module Kdeploy
       }
     end
 
-    def run(command)
+    def run(command, sudo: nil)
       @kdeploy_commands ||= []
-      @kdeploy_commands << { type: :run, command: command }
+      @kdeploy_commands << { type: :run, command: command, sudo: sudo }
     end
 
     def upload(source, destination)

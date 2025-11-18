@@ -9,12 +9,14 @@ module Kdeploy
     end
 
     def execute_run(command, host_name)
-      show_command_header(host_name, :run, command[:command])
+      cmd = command[:command]
+      use_sudo = command[:sudo]
+      show_command_header(host_name, :run, cmd)
       result, duration = measure_time do
-        @executor.execute(command[:command])
+        @executor.execute(cmd, use_sudo: use_sudo)
       end
       show_command_output(result)
-      { command: command[:command], output: result, duration: duration, type: :run }
+      { command: cmd, output: result, duration: duration, type: :run }
     end
 
     def execute_upload(command, host_name)
