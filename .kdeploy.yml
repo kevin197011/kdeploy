@@ -1,0 +1,14 @@
+# Kdeploy configuration file
+# This file is automatically loaded when running kdeploy commands
+
+# Number of parallel task executions (default: 10)
+parallel: 5
+
+# SSH connection timeout in seconds (default: 30)
+ssh_timeout: 60
+
+# SSH host key verification
+# Options: always, never, accept_new
+# default: never
+verify_host_key: never
+

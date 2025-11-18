@@ -1,0 +1,19 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# 自动修复常见 gem 扩展
+# %w[debug rbs].zip(%w[1.7.1 2.8.2]).each do |gem_name, version|
+#   require gem_name
+# rescue LoadError
+#   warn "[Kdeploy] 自动修复 #{gem_name}-#{version} ..."
+#   system("gem pristine #{gem_name} --version #{version}")
+#   begin
+#     require gem_name
+#   rescue LoadError
+#     warn "[Kdeploy] 依然无法加载 #{gem_name}-#{version}，请手动修复。"
+#   end
+# end
+
+require 'kdeploy'
+
+Kdeploy::CLI.start(ARGV)
