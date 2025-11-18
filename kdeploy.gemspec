@@ -37,12 +37,12 @@ Gem::Specification.new do |spec|
   spec.extensions = ['ext/mkrf_conf.rb']
 
   # Dependencies
-  spec.add_dependency 'concurrent-ruby', '~> 1.2'
+  spec.add_dependency 'concurrent-ruby', '~> 1.3'
   spec.add_dependency 'net-scp', '~> 4.0'
   spec.add_dependency 'net-ssh', '~> 7.0'
   spec.add_dependency 'pastel', '~> 0.8'
   spec.add_dependency 'rake', '~> 13.0'
-  spec.add_dependency 'thor', '~> 1.2'
+  spec.add_dependency 'thor', '~> 1.4'
   spec.add_dependency 'tty-box', '~> 0.7'
   spec.add_dependency 'tty-table', '~> 0.12'
 

@@ -1,33 +1,5 @@
 AllCops:
   NewCops: enable
-  SuggestExtensions: false
-
-# Metrics configuration
-Metrics/ClassLength:
-  Max: 200
-  Exclude:
-    - 'lib/kdeploy/cli.rb'
-    - 'lib/kdeploy/initializer.rb'
-
-Metrics/MethodLength:
-  Max: 15
-  Exclude:
-    - 'lib/kdeploy/initializer.rb'
-
-Metrics/AbcSize:
-  Max: 20
-
-Metrics/CyclomaticComplexity:
-  Max: 10
-
-Metrics/PerceivedComplexity:
-  Max: 10
-
-Metrics/BlockLength:
-  Max: 30
-  Exclude:
-    - 'spec/**/*'
-    - 'kdeploy.gemspec'
 
 Gemspec/AddRuntimeDependency:
   Enabled: true

@@ -7,5 +7,5 @@ gemspec
 
 # Development dependencies
 gem 'irb'
-gem 'logger', '~> 1.6'
-gem 'rspec', '~> 3.0'
+gem 'logger', '~> 1.7'
+gem 'rspec', '~> 3.13'
