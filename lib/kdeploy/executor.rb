@@ -112,7 +112,7 @@ module Kdeploy
       if @sudo_password
         # 使用 echo 和管道传递密码给 sudo -S
         # 注意：密码会出现在进程列表中，建议使用 NOPASSWD 配置
-        escaped_password = @sudo_password.gsub("'", "'\"'\"'").gsub('$', '\\$').gsub('`', '\\`')
+        escaped_password = @sudo_password.gsub('\'', "'\"'\"'").gsub('$', '\\$').gsub('`', '\\`')
         "echo '#{escaped_password}' | sudo -S #{command}"
       else
         "sudo #{command}"
