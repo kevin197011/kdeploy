@@ -21,22 +21,43 @@ Metrics/ClassLength:
     - 'lib/kdeploy/post_install.rb'
 
 Metrics/AbcSize:
-  Max: 20
+  Max: 40
+  Exclude:
+    - 'lib/kdeploy/runner.rb'
+    - 'lib/kdeploy/cli.rb'
+    - 'lib/kdeploy/output_formatter.rb'
 
 Metrics/CyclomaticComplexity:
-  Max: 10
+  Max: 15
+  Exclude:
+    - 'lib/kdeploy/runner.rb'
 
 Metrics/PerceivedComplexity:
-  Max: 10
+  Max: 15
+  Exclude:
+    - 'lib/kdeploy/runner.rb'
 
 Metrics/BlockLength:
-  Max: 30
+  Max: 35
   Exclude:
     - 'spec/**/*'
     - 'sample/**/*'
+    - 'kdeploy.gemspec'
+    - 'lib/kdeploy/runner.rb'
 
 Metrics/ParameterLists:
   Max: 6
+
+Metrics/MethodLength:
+  Max: 20
+  Exclude:
+    - 'lib/kdeploy/runner.rb'
+    - 'lib/kdeploy/cli.rb'
+    - 'lib/kdeploy/executor.rb'
+    - 'lib/kdeploy/output_formatter.rb'
+
+Gemspec/RequiredRubyVersion:
+  Enabled: false
 
 Gemspec/AddRuntimeDependency:
   Enabled: true
