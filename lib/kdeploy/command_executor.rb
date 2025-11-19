@@ -3,9 +3,10 @@
 module Kdeploy
   # Executes a single command and records execution time
   class CommandExecutor
-    def initialize(executor, output)
+    def initialize(executor, output, debug: false)
       @executor = executor
       @output = output
+      @debug = debug
     end
 
     def execute_run(command, host_name)
@@ -23,8 +24,8 @@ module Kdeploy
       # Show execution time if command took more than 1 second
       @output.write_line(pastel.dim("    [completed in #{format('%.2f', duration)}s]")) if duration > 1.0
 
-      # Show command output
-      show_command_output(result)
+      # Show command output only in debug mode
+      show_command_output(result) if @debug
       { command: cmd, output: result, duration: duration, type: :run }
     end
 
@@ -86,9 +87,8 @@ module Kdeploy
     end
 
     def show_command_header(host_name, type, description)
-      pastel = pastel_instance
-      @output.write_line(pastel.bright_white("\n#{host_name.ljust(24)} : "))
-      format_command_by_type(type, description, pastel)
+      # Don't show command header during execution - it will be shown in results
+      # This reduces noise during execution
     end
 
     def pastel_instance

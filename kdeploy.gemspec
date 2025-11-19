@@ -37,7 +37,9 @@ Gem::Specification.new do |spec|
   spec.extensions = ['ext/mkrf_conf.rb']
 
   # Dependencies
+  spec.add_dependency 'bcrypt_pbkdf', '~> 1.1'
   spec.add_dependency 'concurrent-ruby', '~> 1.3'
+  spec.add_dependency 'ed25519', '~> 1.2'
   spec.add_dependency 'net-scp', '~> 4.0'
   spec.add_dependency 'net-ssh', '~> 7.0'
   spec.add_dependency 'pastel', '~> 0.8'

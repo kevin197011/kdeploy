@@ -10,10 +10,11 @@ require_relative 'lib/kdeploy/version'
 task default: %w[push]
 
 desc 'Install the gem locally'
-task :install do
+task :run do
   system 'gem uninstall kdeploy -aIx'
   system 'gem build kdeploy.gemspec'
   system "gem install kdeploy-#{Kdeploy::VERSION}.gem"
+  system 'kdeploy --version'
 end
 
 desc 'Clean up generated files'
@@ -49,7 +50,7 @@ task :push do
   load 'lib/kdeploy/version.rb'
 
   system 'git add .'
-  system "git commit -m 'chore: bump version from #{old_version} to #{new_version}'"
+  system "git commit -m 'Update version from #{old_version} to #{new_version}'"
   system 'git pull'
   system 'git push'
 

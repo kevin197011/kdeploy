@@ -7,6 +7,8 @@ echo "🚀 Kdeploy Nginx Deployment Test Script"
 echo "=========================================="
 echo ""
 
+rake run
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -67,55 +69,19 @@ if ! check_ssh web01 10.0.0.1; then
     echo -e "${RED}⚠️  web01 SSH check failed, but continuing...${NC}"
 fi
 
-if ! check_ssh web02 10.0.0.2; then
-    echo -e "${RED}⚠️  web02 SSH check failed, but continuing...${NC}"
-fi
-
 echo ""
 
-# Step 3: Test connection with dry run
-echo -e "${YELLOW}Step 3: Testing connection (dry run)...${NC}"
-kdeploy execute deploy.rb status_nginx --dry-run || true
+# # Step 3: Test connection with dry run
+# echo -e "${YELLOW}Step 3: Testing connection (dry run)...${NC}"
+# kdeploy execute deploy.rb --dry-run || true
+# echo ""
+
+# Step 4: Execute all tasks
+echo -e "${YELLOW}Step 4: Executing all tasks...${NC}"
+echo -e "${YELLOW}⚠️  This will execute ALL tasks defined in deploy.rb${NC}"
+echo -e "${YELLOW}   Tasks include: nginx installation, configuration, node-exporter deployment, etc.${NC}"
+echo ""
+kdeploy execute deploy.rb
 echo ""
 
-# Step 4: Install nginx
-echo -e "${YELLOW}Step 4: Installing nginx...${NC}"
-read -p "Press Enter to continue or Ctrl+C to cancel..."
-kdeploy execute deploy.rb install_nginx
-echo ""
-
-# Step 5: Configure nginx
-echo -e "${YELLOW}Step 5: Configuring nginx...${NC}"
-read -p "Press Enter to continue or Ctrl+C to cancel..."
-kdeploy execute deploy.rb configure_nginx
-echo ""
-
-# Step 6: Check status
-echo -e "${YELLOW}Step 6: Checking nginx status...${NC}"
-kdeploy execute deploy.rb status_nginx
-echo ""
-
-# Step 7: Test nginx
-echo -e "${YELLOW}Step 7: Testing nginx from host...${NC}"
-if curl -s http://localhost:8081 > /dev/null; then
-    echo -e "${GREEN}✅ Nginx is responding on http://localhost:8081 (web01)${NC}"
-else
-    echo -e "${RED}❌ Nginx is not responding on web01. Check the status above.${NC}"
-fi
-if curl -s http://localhost:8082 > /dev/null; then
-    echo -e "${GREEN}✅ Nginx is responding on http://localhost:8082 (web02)${NC}"
-else
-    echo -e "${RED}❌ Nginx is not responding on web02. Check the status above.${NC}"
-fi
-echo ""
-
-echo -e "${GREEN}🎉 Test completed!${NC}"
-echo ""
-echo "Useful commands:"
-echo "  - Check status: kdeploy execute deploy.rb status_nginx"
-echo "  - Restart nginx: kdeploy execute deploy.rb restart_nginx"
-echo "  - Test web01: curl http://localhost:8081"
-echo "  - Test web02: curl http://localhost:8082"
-echo "  - Stop VMs: vagrant halt"
-echo "  - Destroy VMs: vagrant destroy"
 

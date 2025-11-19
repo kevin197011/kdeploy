@@ -18,6 +18,9 @@ Vagrant.configure('2') do |config|
     # Forward nginx port for testing (use 8081 to avoid conflicts)
     web.vm.network 'forwarded_port', guest: 80, host: 8081
 
+    # Forward node-exporter port for testing
+    web.vm.network 'forwarded_port', guest: 9100, host: 9100
+
     # Configure VirtualBox provider
     web.vm.provider 'virtualbox' do |vb|
       vb.name = 'kdeploy-web01'
@@ -44,31 +47,31 @@ Vagrant.configure('2') do |config|
     SHELL
   end
 
-  # Optional: Configure a second web server for testing
-  config.vm.define 'web02' do |web|
-    web.vm.hostname = 'web02'
-    web.vm.network 'private_network', ip: '10.0.0.2'
+  # # Optional: Configure a second web server for testing
+  # config.vm.define 'web02' do |web|
+  #   web.vm.hostname = 'web02'
+  #   web.vm.network 'private_network', ip: '10.0.0.2'
 
-    # Forward SSH port (explicitly set to avoid conflicts)
-    web.vm.network 'forwarded_port', guest: 22, host: 2201, id: 'ssh', auto_correct: true
+  #   # Forward SSH port (explicitly set to avoid conflicts)
+  #   web.vm.network 'forwarded_port', guest: 22, host: 2201, id: 'ssh', auto_correct: true
 
-    # Forward nginx port for testing (use 8082 to avoid conflicts)
-    web.vm.network 'forwarded_port', guest: 80, host: 8082
+  #   # Forward nginx port for testing (use 8082 to avoid conflicts)
+  #   web.vm.network 'forwarded_port', guest: 80, host: 8082
 
-    web.vm.provider 'virtualbox' do |vb|
-      vb.name = 'kdeploy-web02'
-      vb.memory = '512'
-      vb.cpus = 1
-    end
+  #   web.vm.provider 'virtualbox' do |vb|
+  #     vb.name = 'kdeploy-web02'
+  #     vb.memory = '512'
+  #     vb.cpus = 1
+  #   end
 
-    web.vm.provision 'shell', inline: <<-SHELL
-      sudo apt-get update
-      sudo apt-get install -y openssh-server curl
-      mkdir -p /home/vagrant/.ssh
-      chmod 700 /home/vagrant/.ssh
-      echo "vagrant ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/vagrant
-      sudo systemctl enable ssh
-      sudo systemctl start ssh
-    SHELL
-  end
+  #   web.vm.provision 'shell', inline: <<-SHELL
+  #     sudo apt-get update
+  #     sudo apt-get install -y openssh-server curl
+  #     mkdir -p /home/vagrant/.ssh
+  #     chmod 700 /home/vagrant/.ssh
+  #     echo "vagrant ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/vagrant
+  #     sudo systemctl enable ssh
+  #     sudo systemctl start ssh
+  #   SHELL
+  # end
 end

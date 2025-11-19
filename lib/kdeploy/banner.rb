@@ -28,22 +28,38 @@ module Kdeploy
         VERSION
       end
 
-      def show_error(message)
+      def show_error(message, include_banner: false)
         pastel = Pastel.new
-        <<~ERROR
-          #{show}
-          #{pastel.red("Error: #{message}")}
+        error_msg = pastel.red("Error: #{message}")
+        if include_banner
+          <<~ERROR
+            #{show}
+            #{error_msg}
 
-        ERROR
+          ERROR
+        else
+          <<~ERROR
+            #{error_msg}
+
+          ERROR
+        end
       end
 
-      def show_success(message)
+      def show_success(message, include_banner: false)
         pastel = Pastel.new
-        <<~SUCCESS
-          #{show}
-          #{pastel.green("Success: #{message}")}
+        success_msg = pastel.green("Success: #{message}")
+        if include_banner
+          <<~SUCCESS
+            #{show}
+            #{success_msg}
 
-        SUCCESS
+          SUCCESS
+        else
+          <<~SUCCESS
+            #{success_msg}
+
+          SUCCESS
+        end
       end
 
       ASCII_LOGO = <<~'LOGO'

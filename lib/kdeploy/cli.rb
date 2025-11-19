@@ -45,9 +45,11 @@ module Kdeploy
     method_option :limit, type: :string, desc: 'Limit to specific hosts (comma-separated)'
     method_option :parallel, type: :numeric, default: 10, desc: 'Number of parallel executions'
     method_option :dry_run, type: :boolean, desc: 'Show what would be done'
+    method_option :debug, type: :boolean, desc: 'Show detailed command output (stdout/stderr)'
     def execute(task_file, task_name = nil)
       load_config_file
       show_banner_once
+      @task_file_dir = File.dirname(File.expand_path(task_file))
       load_task_file(task_file)
 
       tasks_to_run = determine_tasks(task_name)
@@ -96,7 +98,7 @@ module Kdeploy
 
     def print_dry_run(hosts, task_name)
       formatter = OutputFormatter.new
-      puts Kdeploy::Banner.show
+      # Banner already shown by show_banner_once, don't show again
       puts formatter.format_dry_run_header
       puts
 
@@ -113,8 +115,8 @@ module Kdeploy
       puts
     end
 
-    def print_results(results, task_name)
-      formatter = OutputFormatter.new
+    def print_results(results, task_name, show_summary: false, debug: false)
+      formatter = OutputFormatter.new(debug: debug)
       puts formatter.format_task_header(task_name)
 
       if results.empty?
@@ -128,7 +130,8 @@ module Kdeploy
         print_host_result(host, result, formatter)
       end
 
-      print_summary(results, formatter)
+      # Only show summary if explicitly requested (for single task execution)
+      print_summary(results, formatter) if show_summary
     end
 
     def print_host_result(_host, result, formatter)
@@ -194,9 +197,16 @@ module Kdeploy
     end
 
     def execute_tasks(tasks_to_run)
+      all_results = {}
+
       tasks_to_run.each do |task|
-        execute_single_task(task)
+        task_results = execute_single_task(task)
+        # Collect results for final summary
+        all_results[task] = task_results if task_results
       end
+
+      # Show combined summary at the end for all tasks
+      print_all_tasks_summary(all_results) unless all_results.empty?
     end
 
     def execute_single_task(task)
@@ -205,12 +215,12 @@ module Kdeploy
 
       if hosts.empty?
         puts Kdeploy::Banner.show_error("No hosts found for task: #{task}")
-        return
+        return nil
       end
 
       if options[:dry_run]
         print_dry_run(hosts, task)
-        return
+        return nil
       end
 
       run_task(hosts, task)
@@ -219,9 +229,40 @@ module Kdeploy
     def run_task(hosts, task)
       output = ConsoleOutput.new
       parallel_count = options[:parallel] || Configuration.default_parallel
-      runner = Runner.new(hosts, self.class.kdeploy_tasks, parallel: parallel_count, output: output)
+      debug_mode = options[:debug] || false
+      base_dir = @task_file_dir
+      runner = Runner.new(hosts, self.class.kdeploy_tasks, parallel: parallel_count, output: output, debug: debug_mode,
+                                                           base_dir: base_dir)
       results = runner.run(task)
-      print_results(results, task)
+      # Don't show summary here - it will be shown at the end for all tasks
+      print_results(results, task, show_summary: false, debug: debug_mode)
+      results
+    end
+
+    def print_all_tasks_summary(all_results)
+      debug_mode = options[:debug] || false
+      formatter = OutputFormatter.new(debug: debug_mode)
+      puts formatter.format_summary_header
+
+      # Collect all hosts from all tasks
+      all_hosts = {}
+      all_results.each do |task_name, task_results|
+        task_results.each do |host, result|
+          all_hosts[host] ||= { ok: 0, changed: 0, failed: 0, tasks: [] }
+          counts = formatter.calculate_summary_counts(result)
+          all_hosts[host][:ok] += counts[:ok]
+          all_hosts[host][:changed] += counts[:changed]
+          all_hosts[host][:failed] += counts[:failed]
+          all_hosts[host][:tasks] << task_name
+        end
+      end
+
+      max_host_len = all_hosts.keys.map(&:length).max || 16
+      all_hosts.keys.sort.each do |host|
+        counts = all_hosts[host]
+        line = formatter.build_summary_line(host, counts, max_host_len)
+        puts formatter.colorize_summary_line(line, counts)
+      end
     end
 
     def extract_error_message(result)

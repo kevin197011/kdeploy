@@ -6,21 +6,22 @@ require 'tty-box'
 module Kdeploy
   # Formats and displays execution results
   class OutputFormatter
-    def initialize
+    def initialize(debug: false)
       @pastel = Pastel.new
+      @debug = debug
     end
 
     def format_task_header(task_name)
-      @pastel.cyan("\nPLAY [#{task_name}] " + ('*' * 64))
+      "#{@pastel.bright_cyan("\n🚀 Task: #{task_name}")}\n#{@pastel.dim('─' * 60)}"
     end
 
     def format_host_status(host, status)
       status_str = case status
-                   when :success then @pastel.green('ok')
-                   when :changed then @pastel.yellow('changed')
-                   else @pastel.red('failed')
+                   when :success then @pastel.green('✓ ok')
+                   when :changed then @pastel.yellow('~ changed')
+                   else @pastel.red('✗ failed')
                    end
-      @pastel.bright_white("\n#{host.ljust(24)} : #{status_str}")
+      @pastel.bright_white("  #{host.ljust(20)} #{status_str}")
     end
 
     def format_upload_steps(steps, shown)
@@ -31,8 +32,8 @@ module Kdeploy
       format_file_steps(steps, shown, :upload_template, @pastel.yellow('  === Template ==='), 'upload_template: ')
     end
 
-    def format_file_steps(steps, shown, type, header, prefix)
-      output = [header]
+    def format_file_steps(steps, shown, type, _header, prefix)
+      output = []
       steps.each do |step|
         next if step_already_shown?(step, type, shown)
 
@@ -44,13 +45,16 @@ module Kdeploy
 
     def format_file_step(step, type, prefix)
       duration_str = format_duration(step[:duration])
-      label = type == :upload ? '[upload]' : '[template]'
-      color("    #{label} #{step[:command].sub(prefix, '')}#{duration_str}")
+      icon = type == :upload ? '📤' : '📝'
+      file_path = step[:command].sub(prefix, '')
+      # Truncate long paths for cleaner output
+      display_path = file_path.length > 50 ? "...#{file_path[-47..]}" : file_path
+      color_method = type == :upload ? :green : :yellow
+      @pastel.dim("    #{icon} ") + @pastel.send(color_method, display_path) + duration_str
     end
 
     def format_run_steps(steps, shown)
       output = []
-      output << @pastel.cyan('  === Run ===')
       steps.each do |step|
         next if step_already_shown?(step, :run, shown)
 
@@ -64,20 +68,24 @@ module Kdeploy
       output = []
       duration_str = format_duration(step[:duration])
       command_line = step[:command].to_s.lines.first.strip
-      output << @pastel.cyan("    [run]    #{command_line}#{duration_str}")
-      output.concat(format_multiline_command(step[:command]))
-      # Format and add command output (stdout/stderr)
-      cmd_output = format_command_output(step[:output])
-      output.concat(cmd_output) if cmd_output.any?
+      # Truncate long commands for cleaner output
+      display_cmd = command_line.length > 60 ? "#{command_line[0..57]}..." : command_line
+      output << (@pastel.dim('    • ') + @pastel.cyan(display_cmd) + duration_str)
+      # Only show multiline details in debug mode
+      if @debug
+        output.concat(format_multiline_command(step[:command]))
+        cmd_output = format_command_output(step[:output])
+        output.concat(cmd_output) if cmd_output.any?
+      end
       output
     end
 
     def format_error(error_message)
-      @pastel.red("  ERROR: #{error_message}")
+      @pastel.red("    ✗ ERROR: #{error_message}")
     end
 
     def format_summary_header
-      @pastel.cyan("\nPLAY RECAP #{'*' * 64}")
+      "#{@pastel.bright_cyan("\n📊 Execution Summary")}\n#{@pastel.dim('─' * 60)}"
     end
 
     def format_summary_line(host, result, max_host_len)
