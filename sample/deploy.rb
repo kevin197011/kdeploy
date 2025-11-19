@@ -190,29 +190,29 @@ end
 # Configure node-exporter systemd service
 task :configure_node_exporter, roles: :web do
   run <<~SHELL
-        # Create systemd service file
-        sudo tee /etc/systemd/system/node-exporter.service > /dev/null <<EOF
-    [Unit]
-    Description=Node Exporter
-    After=network.target
+            # Create systemd service file
+            sudo tee /etc/systemd/system/node-exporter.service > /dev/null <<EOF
+      [Unit]
+      Description=Node Exporter
+      After=network.target
 
-    [Service]
-    User=node-exporter
-    Group=node-exporter
-    Type=simple
-    ExecStart=/usr/local/bin/node_exporter
-    Restart=always
-    RestartSec=5
+      [Service]
+      User=node-exporter
+      Group=node-exporter
+      Type=simple
+      ExecStart=/usr/local/bin/node_exporter
+      Restart=always
+      RestartSec=5
 
-    [Install]
-    WantedBy=multi-user.target
+      [Install]
+      WantedBy=multi-user.target
     EOF
 
-        # Reload systemd and enable service
-        sudo systemctl daemon-reload
-        sudo systemctl enable node-exporter
+            # Reload systemd and enable service
+            sudo systemctl daemon-reload
+            sudo systemctl enable node-exporter
 
-        echo "node-exporter service configured"
+            echo "node-exporter service configured"
   SHELL
 end
 
@@ -254,27 +254,27 @@ task :deploy_node_exporter, roles: :web do
 
   # Configure systemd service
   run <<~SHELL
-        # Create systemd service file
-        sudo tee /etc/systemd/system/node-exporter.service > /dev/null <<EOF
-    [Unit]
-    Description=Node Exporter
-    After=network.target
+            # Create systemd service file
+            sudo tee /etc/systemd/system/node-exporter.service > /dev/null <<EOF
+      [Unit]
+      Description=Node Exporter
+      After=network.target
 
-    [Service]
-    User=node-exporter
-    Group=node-exporter
-    Type=simple
-    ExecStart=/usr/local/bin/node_exporter
-    Restart=always
-    RestartSec=5
+      [Service]
+      User=node-exporter
+      Group=node-exporter
+      Type=simple
+      ExecStart=/usr/local/bin/node_exporter
+      Restart=always
+      RestartSec=5
 
-    [Install]
-    WantedBy=multi-user.target
+      [Install]
+      WantedBy=multi-user.target
     EOF
 
-        # Reload systemd and enable service
-        sudo systemctl daemon-reload
-        sudo systemctl enable node-exporter
+            # Reload systemd and enable service
+            sudo systemctl daemon-reload
+            sudo systemctl enable node-exporter
   SHELL
 
   # Start service

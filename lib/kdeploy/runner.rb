@@ -5,8 +5,8 @@ require 'concurrent'
 module Kdeploy
   # Concurrent task runner for executing tasks across multiple hosts
   class Runner
-    def initialize(hosts, tasks, parallel: Configuration.default_parallel, output: ConsoleOutput.new, debug: false,
-                   base_dir: nil)
+    def initialize(hosts, tasks, parallel: Configuration.default_parallel, output: ConsoleOutput.new,
+                   debug: false, base_dir: nil)
       @hosts = hosts
       @tasks = tasks
       @parallel = parallel
@@ -61,8 +61,11 @@ module Kdeploy
             @results[name] = result
           else
             # Handle unexpected result format - create a default result
-            @results[host_name] =
-              { status: :unknown, error: "Unexpected result format: #{future_result.class}", output: [] }
+            @results[host_name] = {
+              status: :unknown,
+              error: "Unexpected result format: #{future_result.class}",
+              output: []
+            }
           end
 
           # Check if future raised an exception

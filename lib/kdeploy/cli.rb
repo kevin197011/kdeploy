@@ -231,8 +231,13 @@ module Kdeploy
       parallel_count = options[:parallel] || Configuration.default_parallel
       debug_mode = options[:debug] || false
       base_dir = @task_file_dir
-      runner = Runner.new(hosts, self.class.kdeploy_tasks, parallel: parallel_count, output: output, debug: debug_mode,
-                                                           base_dir: base_dir)
+      runner = Runner.new(
+        hosts, self.class.kdeploy_tasks,
+        parallel: parallel_count,
+        output: output,
+        debug: debug_mode,
+        base_dir: base_dir
+      )
       results = runner.run(task)
       # Don't show summary here - it will be shown at the end for all tasks
       print_results(results, task, show_summary: false, debug: debug_mode)
