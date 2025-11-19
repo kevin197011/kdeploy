@@ -20,7 +20,7 @@ end
 desc 'Clean up generated files'
 task :clean do
   FileUtils.rm_f Dir.glob('*.gem')
-  FileUtils.rm_f Dir.glob('pkg')
+  FileUtils.rm_rf 'pkg' if File.directory?('pkg')
 end
 
 desc 'Bump version (patch/minor/major)'
