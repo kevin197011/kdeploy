@@ -168,22 +168,31 @@ module Kdeploy
       result = []
       return result unless output
 
-      # Handle Hash with stdout/stderr keys
       if output.is_a?(Hash)
-        # Check for stdout key
-        if output.key?(:stdout)
-          stdout = output[:stdout]
-          format_stdout_lines(stdout, result) if stdout && !stdout.to_s.strip.empty?
-        end
-        # Check for stderr key
-        if output.key?(:stderr)
-          stderr = output[:stderr]
-          format_stderr_lines(stderr, result) if stderr && !stderr.to_s.strip.empty?
-        end
+        format_hash_output(output, result)
       elsif output.is_a?(String) && !output.strip.empty?
         format_stdout_lines(output, result)
       end
       result
+    end
+
+    def format_hash_output(output, result)
+      format_stdout_from_hash(output, result)
+      format_stderr_from_hash(output, result)
+    end
+
+    def format_stdout_from_hash(output, result)
+      return unless output.key?(:stdout)
+
+      stdout = output[:stdout]
+      format_stdout_lines(stdout, result) if stdout && !stdout.to_s.strip.empty?
+    end
+
+    def format_stderr_from_hash(output, result)
+      return unless output.key?(:stderr)
+
+      stderr = output[:stderr]
+      format_stderr_lines(stderr, result) if stderr && !stderr.to_s.strip.empty?
     end
 
     def format_stdout_lines(stdout, result)
