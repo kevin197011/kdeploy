@@ -55,6 +55,7 @@ Metrics/MethodLength:
     - 'lib/kdeploy/cli.rb'
     - 'lib/kdeploy/executor.rb'
     - 'lib/kdeploy/output_formatter.rb'
+    - 'lib/kdeploy/initializer.rb'
 
 Gemspec/RequiredRubyVersion:
   Enabled: false
