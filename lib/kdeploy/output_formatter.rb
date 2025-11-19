@@ -66,7 +66,9 @@ module Kdeploy
       command_line = step[:command].to_s.lines.first.strip
       output << @pastel.cyan("    [run]    #{command_line}#{duration_str}")
       output.concat(format_multiline_command(step[:command]))
-      output.concat(format_command_output(step[:output]))
+      # Format and add command output (stdout/stderr)
+      cmd_output = format_command_output(step[:output])
+      output.concat(cmd_output) if cmd_output.any?
       output
     end
 
@@ -166,18 +168,44 @@ module Kdeploy
       result = []
       return result unless output
 
-      if output.is_a?(Hash) && output[:stdout]
-        format_stdout_lines(output[:stdout], result)
-      elsif output.is_a?(String)
+      # Handle Hash with stdout/stderr keys
+      if output.is_a?(Hash)
+        # Check for stdout key
+        if output.key?(:stdout)
+          stdout = output[:stdout]
+          format_stdout_lines(stdout, result) if stdout && !stdout.to_s.strip.empty?
+        end
+        # Check for stderr key
+        if output.key?(:stderr)
+          stderr = output[:stderr]
+          format_stderr_lines(stderr, result) if stderr && !stderr.to_s.strip.empty?
+        end
+      elsif output.is_a?(String) && !output.strip.empty?
         format_stdout_lines(output, result)
       end
       result
     end
 
     def format_stdout_lines(stdout, result)
-      stdout.each_line do |line|
-        result << @pastel.green("        #{line.rstrip}") unless line.strip.empty?
+      return result if stdout.nil? || stdout.to_s.empty?
+
+      stdout.to_s.each_line do |line|
+        stripped = line.rstrip
+        # Show all non-empty lines
+        result << @pastel.green("        #{stripped}") unless stripped.empty?
       end
+      result
+    end
+
+    def format_stderr_lines(stderr, result)
+      return result if stderr.nil? || stderr.to_s.empty?
+
+      stderr.to_s.each_line do |line|
+        stripped = line.rstrip
+        # Show all non-empty stderr lines in yellow
+        result << @pastel.yellow("        #{stripped}") unless stripped.empty?
+      end
+      result
     end
 
     def step_already_shown?(step, type, shown)

@@ -12,9 +12,19 @@ module Kdeploy
       cmd = command[:command]
       use_sudo = command[:sudo]
       show_command_header(host_name, :run, cmd)
+
+      # Show progress indicator for long-running commands
+      pastel = @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
+      Time.now
+
       result, duration = measure_time do
         @executor.execute(cmd, use_sudo: use_sudo)
       end
+
+      # Show execution time if command took more than 1 second
+      @output.write_line(pastel.dim("    [completed in #{format('%.2f', duration)}s]")) if duration > 1.0
+
+      # Show command output
       show_command_output(result)
       { command: cmd, output: result, duration: duration, type: :run }
     end

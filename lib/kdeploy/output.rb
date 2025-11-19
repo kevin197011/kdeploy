@@ -27,14 +27,21 @@ module Kdeploy
 
     def write(message)
       print(message)
+      $stdout.flush  # Ensure immediate output
     end
 
     def write_line(message)
       puts(message)
+      $stdout.flush  # Ensure immediate output
     end
 
     def write_error(message)
       puts(@pastel.red(message))
+      $stdout.flush  # Ensure immediate output
+    end
+
+    def flush
+      $stdout.flush
     end
 
     attr_reader :pastel

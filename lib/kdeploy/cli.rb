@@ -117,6 +117,12 @@ module Kdeploy
       formatter = OutputFormatter.new
       puts formatter.format_task_header(task_name)
 
+      if results.empty?
+        puts Kdeploy::Banner.show_error("No hosts executed for task: #{task_name}")
+        puts 'This usually means no hosts matched the task configuration.'
+        return
+      end
+
       results.each do |host, result|
         puts formatter.format_host_status(host, result[:status])
         print_host_result(host, result, formatter)

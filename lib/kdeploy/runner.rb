@@ -31,7 +31,22 @@ module Kdeploy
 
     def execute_concurrent_tasks(task)
       futures = create_task_futures(task)
-      futures.each(&:wait)
+
+      # Show progress while waiting for tasks to complete
+      total = futures.length
+      completed = 0
+
+      futures.each do |future|
+        future.wait
+        completed += 1
+        # Show progress for multiple hosts
+        next unless total > 1
+
+        pastel = @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
+        @output.write_line(pastel.dim("    [Progress: #{completed}/#{total} hosts completed]"))
+        @output.flush if @output.respond_to?(:flush)
+      end
+
       @results
     end
 
@@ -70,7 +85,13 @@ module Kdeploy
       task_desc = CommandGrouper.task_description(first_cmd)
       show_task_header(task_desc)
 
-      command_group.each do |command|
+      command_group.each_with_index do |command, index|
+        # Show progress for multiple commands
+        if command_group.length > 1
+          pastel = @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
+          @output.write_line(pastel.dim("    [Step #{index + 1}/#{command_group.length}]"))
+        end
+
         step_result = execute_command(command_executor, command, name)
         result[:output] << step_result
       end
