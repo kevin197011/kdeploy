@@ -1,5 +1,42 @@
 AllCops:
   NewCops: enable
+  TargetRubyVersion: 3.0
+
+# Allow longer methods and classes for deployment scripts
+Metrics/MethodLength:
+  Max: 15
+  Exclude:
+    - 'Rakefile'
+    - 'lib/kdeploy/initializer.rb'
+    - 'sample/**/*'
+
+Metrics/ClassLength:
+  Max: 150
+  Exclude:
+    - 'lib/kdeploy/initializer.rb'
+    - 'lib/kdeploy/output_formatter.rb'
+    - 'lib/kdeploy/cli.rb'
+    - 'lib/kdeploy/executor.rb'
+    - 'lib/kdeploy/runner.rb'
+    - 'lib/kdeploy/post_install.rb'
+
+Metrics/AbcSize:
+  Max: 20
+
+Metrics/CyclomaticComplexity:
+  Max: 10
+
+Metrics/PerceivedComplexity:
+  Max: 10
+
+Metrics/BlockLength:
+  Max: 30
+  Exclude:
+    - 'spec/**/*'
+    - 'sample/**/*'
+
+Metrics/ParameterLists:
+  Max: 6
 
 Gemspec/AddRuntimeDependency:
   Enabled: true

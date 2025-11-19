@@ -25,7 +25,7 @@ module Kdeploy
         config_path ||= find_config_file
         return unless config_path && File.exist?(config_path)
 
-        config = YAML.safe_load(File.read(config_path), permitted_classes: [Symbol])
+        config = YAML.safe_load_file(config_path, permitted_classes: [Symbol])
         apply_config(config)
       rescue StandardError => e
         warn "Warning: Failed to load config from #{config_path}: #{e.message}"
