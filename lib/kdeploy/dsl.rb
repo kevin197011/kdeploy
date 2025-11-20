@@ -39,6 +39,44 @@ module Kdeploy
       }
     end
 
+    # Assign task to roles or hosts after task definition
+    def assign_task(task_name, on: nil, roles: nil)
+      task = kdeploy_tasks[task_name.to_sym]
+      raise ArgumentError, "Task #{task_name} not found" unless task
+
+      task[:hosts] = normalize_hosts_option(on) if on
+      task[:roles] = normalize_roles_option(roles) if roles
+    end
+
+    # Include task file and automatically assign all tasks to specified roles or hosts
+    def include_tasks(file_path, roles: nil, on: nil)
+      # Resolve relative paths based on the caller's file location
+      unless File.absolute_path?(file_path)
+        caller_file = caller_locations(1, 1).first.path
+        base_dir = File.dirname(File.expand_path(caller_file))
+        file_path = File.expand_path(file_path, base_dir)
+      end
+
+      # Store tasks before loading
+      tasks_before = kdeploy_tasks.keys
+
+      # Load the task file
+      module_eval(File.read(file_path), file_path)
+
+      # Get newly added tasks
+      tasks_after = kdeploy_tasks.keys
+      new_tasks = tasks_after - tasks_before
+
+      # Assign roles/hosts to all new tasks (only if task doesn't already have hosts/roles)
+      new_tasks.each do |task_name|
+        task = kdeploy_tasks[task_name]
+        # Only assign if task doesn't already have hosts or roles defined
+        next if task[:hosts] || task[:roles]
+
+        assign_task(task_name, roles: roles, on: on) if roles || on
+      end
+    end
+
     def normalize_hosts_option(on)
       return on if on.is_a?(Array)
 

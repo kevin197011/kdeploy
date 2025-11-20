@@ -20,6 +20,11 @@ Metrics/ClassLength:
     - 'lib/kdeploy/runner.rb'
     - 'lib/kdeploy/post_install.rb'
 
+Metrics/ModuleLength:
+  Max: 120
+  Exclude:
+    - 'lib/kdeploy/dsl.rb'
+
 Metrics/AbcSize:
   Max: 40
   Exclude:

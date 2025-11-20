@@ -7,12 +7,48 @@ This is a sample deployment project demonstrating Kdeploy's capabilities with Ng
 ```
 .
 ├── Vagrantfile        # Vagrant configuration for test VMs
-├── deploy.rb          # Deployment tasks
+├── deploy.rb          # Main deployment file (hosts, roles, task includes)
+├── tasks/             # Task files directory
+│   ├── nginx.rb       # Nginx deployment tasks
+│   ├── node_exporter.rb # Node Exporter deployment tasks
+│   └── system.rb      # System maintenance tasks
 ├── config/            # Configuration files
 │   ├── nginx.conf.erb # Nginx configuration template
 │   └── app.conf       # Static configuration
 └── README.md          # This file
 ```
+
+## 📋 Task Organization
+
+Tasks are organized into separate files in the `tasks/` directory for better modularity:
+
+- **`tasks/nginx.rb`**: All Nginx-related tasks (install, configure, deploy, start, stop, restart, status)
+- **`tasks/node_exporter.rb`**: Node Exporter deployment and management tasks
+- **`tasks/system.rb`**: System maintenance tasks (update, maintenance)
+
+In `deploy.rb`, you can simply use `include_tasks` to load task files and automatically assign all tasks to roles:
+
+```ruby
+# Include task files and assign all tasks to roles in one line
+include_tasks 'tasks/nginx.rb', roles: :web
+include_tasks 'tasks/node_exporter.rb', roles: :web
+include_tasks 'tasks/system.rb', roles: :web
+
+# Or comment out to exclude specific task groups
+# include_tasks 'tasks/node_exporter.rb', roles: :web
+```
+
+**Key Points**:
+- Task files (`tasks/*.rb`) define tasks **without** specifying roles
+- `include_tasks` automatically assigns all tasks in the file to the specified role
+- Tasks that already have `on:` or `roles:` defined in the task file will not be overridden
+- This separation allows you to reuse task files across different projects with different role assignments
+
+This modular approach allows you to:
+- Organize tasks by service or functionality
+- Easily enable/disable task groups
+- Share task files across multiple deployment projects
+- Maintain cleaner, more focused code
 
 ## 🔧 Configuration Templates
 
