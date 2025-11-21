@@ -5,6 +5,7 @@
 
 require 'sinatra'
 
+# Sample Sinatra application class for directory synchronization demo
 class App < Sinatra::Base
   get '/' do
     'Hello from Kdeploy Sample App!'

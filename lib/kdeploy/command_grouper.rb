@@ -11,9 +11,7 @@ module Kdeploy
 
     def self.group_key_for(cmd)
       case cmd[:type]
-      when :upload, :upload_template
-        "#{cmd[:type]}_#{cmd[:source]}"
-      when :sync
+      when :upload, :upload_template, :sync
         "#{cmd[:type]}_#{cmd[:source]}"
       when :run
         "#{cmd[:type]}_#{cmd[:command].to_s.lines.first.strip}"
