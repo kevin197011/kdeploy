@@ -88,6 +88,18 @@ module Kdeploy
             sudo apt-get update && sudo apt-get upgrade -y
           SHELL
         end
+
+        # Example: Directory synchronization task
+        task :sync_app, roles: :web do
+          # Sync application directory, ignoring development files
+          sync './app', '/var/www/app',
+            ignore: ['.git', '*.log', 'node_modules', '.env.local', '*.tmp'],
+            delete: true
+
+          # Sync configuration files
+          sync './config', '/etc/app',
+            exclude: ['*.example', '*.bak']
+        end
       RUBY
     end
 
@@ -261,6 +273,11 @@ module Kdeploy
         - **update**: Update all hosts
           ```bash
           kdeploy execute deploy.rb update
+          ```
+
+        - **sync_app**: Sync application directory to remote servers
+          ```bash
+          kdeploy execute deploy.rb sync_app
           ```
       MD
     end

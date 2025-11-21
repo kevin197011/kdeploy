@@ -1,0 +1,8 @@
+# This file demonstrates that .git directory and other ignored files
+# will not be synced when using the sync command with ignore patterns
+
+*.log
+*.tmp
+.env.local
+node_modules/
+

@@ -32,6 +32,17 @@ module Kdeploy
       format_file_steps(steps, shown, :upload_template, @pastel.yellow('  === Template ==='), 'upload_template: ')
     end
 
+    def format_sync_steps(steps, shown)
+      output = []
+      steps.each do |step|
+        next if step_already_shown?(step, :sync, shown)
+
+        mark_step_as_shown(step, :sync, shown)
+        output << format_sync_step(step)
+      end
+      output
+    end
+
     def format_file_steps(steps, shown, type, _header, prefix)
       output = []
       steps.each do |step|
@@ -154,6 +165,10 @@ module Kdeploy
         "#{@pastel.blue('>')} Upload: #{command[:source]} -> #{command[:destination]}"
       when :upload_template
         "#{@pastel.blue('>')} Template: #{command[:source]} -> #{command[:destination]}"
+      when :sync
+        ignore_str = command[:ignore]&.any? ? " (ignore: #{command[:ignore].join(', ')})" : ''
+        delete_str = command[:delete] ? ' (delete: true)' : ''
+        "#{@pastel.blue('>')} Sync: #{command[:source]} -> #{command[:destination]}#{ignore_str}#{delete_str}"
       else
         "#{@pastel.blue('>')} #{command[:type]}: #{command}"
       end
@@ -233,6 +248,25 @@ module Kdeploy
     def mark_step_as_shown(step, type, shown)
       key = [step[:command], type].hash
       shown[key] = true
+    end
+
+    def format_sync_step(step)
+      duration_str = format_duration(step[:duration])
+      sync_path = step[:command].sub('sync: ', '')
+      # Truncate long paths for cleaner output
+      display_path = sync_path.length > 50 ? "...#{sync_path[-47..]}" : sync_path
+
+      result = step[:result] || {}
+      uploaded = result[:uploaded] || 0
+      deleted = result[:deleted] || 0
+      total = result[:total] || 0
+
+      stats = []
+      stats << @pastel.green("#{uploaded} uploaded") if uploaded.positive?
+      stats << @pastel.yellow("#{deleted} deleted") if deleted.positive?
+      stats_str = stats.any? ? " (#{stats.join(', ')})" : " (#{total} files)"
+
+      @pastel.dim('    📁 ') + @pastel.cyan(display_path) + @pastel.dim(stats_str) + duration_str
     end
   end
 end

@@ -53,6 +53,38 @@ module Kdeploy
       }
     end
 
+    def execute_sync(command, host_name)
+      source = command[:source]
+      destination = command[:destination]
+      ignore = command[:ignore] || []
+      exclude = command[:exclude] || []
+      delete = command[:delete] || false
+
+      description = "sync: #{source} -> #{destination}"
+      description += " (delete: #{delete})" if delete
+      show_command_header(host_name, :sync, description)
+
+      result, duration = measure_time do
+        @executor.sync_directory(
+          source,
+          destination,
+          ignore: ignore,
+          exclude: exclude,
+          delete: delete
+        )
+      end
+
+      {
+        command: "sync: #{source} -> #{destination}",
+        duration: duration,
+        type: :sync,
+        result: result,
+        uploaded: result[:uploaded],
+        deleted: result[:deleted],
+        total: result[:total]
+      }
+    end
+
     private
 
     def measure_time

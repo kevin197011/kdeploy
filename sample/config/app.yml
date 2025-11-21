@@ -1,0 +1,16 @@
+# Application configuration
+# This file will be synced to /etc/app/app.yml
+
+database:
+  host: db.example.com
+  port: 5432
+  name: production_db
+
+redis:
+  host: redis.example.com
+  port: 6379
+
+logging:
+  level: warn
+  file: /var/log/app/app.log
+

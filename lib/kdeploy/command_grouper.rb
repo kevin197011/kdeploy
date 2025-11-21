@@ -13,6 +13,8 @@ module Kdeploy
       case cmd[:type]
       when :upload, :upload_template
         "#{cmd[:type]}_#{cmd[:source]}"
+      when :sync
+        "#{cmd[:type]}_#{cmd[:source]}"
       when :run
         "#{cmd[:type]}_#{cmd[:command].to_s.lines.first.strip}"
       else
@@ -26,6 +28,8 @@ module Kdeploy
         "upload #{command[:source]}"
       when :upload_template
         "template #{command[:source]}"
+      when :sync
+        "sync #{command[:source]}"
       when :run
         command[:command].to_s.lines.first.strip
       else

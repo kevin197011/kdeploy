@@ -28,3 +28,6 @@ include_tasks 'tasks/node_exporter.rb', roles: :web
 # System maintenance tasks - all tasks assigned to :web role
 include_tasks 'tasks/system.rb', roles: :web
 # NOTE: maintenance task in system.rb already has 'on: %w[web01]' defined, which takes precedence
+
+# Directory synchronization tasks - all tasks assigned to :web role
+include_tasks 'tasks/sync.rb', roles: :web

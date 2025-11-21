@@ -162,6 +162,8 @@ module Kdeploy
         formatter.format_upload_steps(steps, shown)
       when :upload_template
         formatter.format_template_steps(steps, shown)
+      when :sync
+        formatter.format_sync_steps(steps, shown)
       when :run
         formatter.format_run_steps(steps, shown)
       else

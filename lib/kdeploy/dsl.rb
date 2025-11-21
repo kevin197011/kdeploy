@@ -121,6 +121,18 @@ module Kdeploy
       }
     end
 
+    def sync(source, destination, ignore: [], delete: false, exclude: [])
+      @kdeploy_commands ||= []
+      @kdeploy_commands << {
+        type: :sync,
+        source: source,
+        destination: destination,
+        ignore: Array(ignore),
+        exclude: Array(exclude),
+        delete: delete
+      }
+    end
+
     def inventory(&block)
       instance_eval(&block) if block_given?
     end

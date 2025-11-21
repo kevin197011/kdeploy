@@ -3,6 +3,9 @@
 require 'net/ssh'
 require 'net/scp'
 require 'pathname'
+require 'find'
+require 'shellwords'
+require_relative 'file_filter'
 
 module Kdeploy
   # SSH/SCP executor for remote command execution and file operations
@@ -89,6 +92,51 @@ module Kdeploy
       Template.render_and_upload(self, resolved_source, destination, variables)
     rescue StandardError => e
       raise TemplateError.new("Template upload failed: #{e.message}", e)
+    end
+
+    def sync_directory(source, destination, ignore: [], exclude: [], delete: false, use_sudo: nil)
+      use_sudo = @use_sudo if use_sudo.nil?
+
+      # Resolve relative paths relative to base_dir
+      resolved_source = resolve_path(source)
+
+      # Validate source directory
+      raise FileNotFoundError, "Source directory not found: #{resolved_source}" unless File.directory?(resolved_source)
+
+      # Create file filter
+      all_patterns = ignore + exclude
+      filter = FileFilter.new(ignore_patterns: all_patterns)
+
+      # Collect files to sync
+      files_to_sync = collect_files_to_sync(resolved_source, filter)
+
+      # Upload files
+      uploaded_count = 0
+      source_path = Pathname.new(resolved_source)
+      files_to_sync.each do |file_path|
+        relative_path = Pathname.new(file_path).relative_path_from(source_path).to_s
+        remote_path = File.join(destination, relative_path).gsub(%r{/+}, '/')
+
+        # Ensure remote directory exists
+        remote_dir = File.dirname(remote_path)
+        ensure_remote_directory(remote_dir, use_sudo: use_sudo)
+
+        # Upload file
+        upload(file_path, remote_path, use_sudo: use_sudo)
+        uploaded_count += 1
+      end
+
+      # Delete extra files if requested
+      deleted_count = 0
+      deleted_count = delete_extra_files(resolved_source, destination, filter, use_sudo: use_sudo) if delete
+
+      {
+        uploaded: uploaded_count,
+        deleted: deleted_count,
+        total: files_to_sync.size
+      }
+    rescue StandardError => e
+      raise SCPError.new("Directory sync failed: #{e.message}", e)
     end
 
     private
@@ -183,6 +231,68 @@ module Kdeploy
       else
         "sudo #{command}"
       end
+    end
+
+    def collect_files_to_sync(source_dir, filter)
+      files = []
+      source_path = Pathname.new(source_dir)
+
+      Find.find(source_dir) do |file_path|
+        next if File.directory?(file_path)
+
+        relative_path = Pathname.new(file_path).relative_path_from(source_path).to_s
+        next if filter.ignored?(relative_path, source_dir)
+
+        files << file_path
+      end
+
+      files
+    end
+
+    def ensure_remote_directory(remote_dir, use_sudo: nil)
+      use_sudo = @use_sudo if use_sudo.nil?
+      return if remote_dir.nil? || remote_dir.empty? || remote_dir == '.' || remote_dir == '/'
+
+      # Create directory with -p flag to create parent directories
+      mkdir_command = "mkdir -p #{remote_dir.shellescape}"
+      execute(mkdir_command, use_sudo: use_sudo)
+    rescue StandardError => e
+      # Ignore errors if directory already exists
+      error_msg = e.message.downcase
+      unless error_msg.include?('exists') || error_msg.include?('file exists') || error_msg.include?('already exists')
+        raise
+      end
+    end
+
+    def delete_extra_files(source_dir, destination_dir, filter, use_sudo: nil)
+      use_sudo = @use_sudo if use_sudo.nil?
+
+      # Get list of remote files
+      list_command = "find #{destination_dir.shellescape} -type f 2>/dev/null || true"
+      result = execute(list_command, use_sudo: use_sudo)
+      remote_files = result[:stdout].lines.map(&:strip).reject(&:empty?)
+
+      # Get list of local files (relative paths)
+      source_path = Pathname.new(source_dir)
+      local_files = collect_files_to_sync(source_dir, filter).map do |file_path|
+        relative_path = Pathname.new(file_path).relative_path_from(source_path).to_s
+        File.join(destination_dir, relative_path).gsub(%r{/+}, '/')
+      end
+
+      # Find files to delete
+      files_to_delete = remote_files - local_files
+
+      # Delete extra files
+      deleted_count = 0
+      files_to_delete.each do |file_path|
+        delete_command = "rm -f #{file_path.shellescape}"
+        execute(delete_command, use_sudo: use_sudo)
+        deleted_count += 1
+      rescue StandardError
+        # Ignore deletion errors
+      end
+
+      deleted_count
     end
   end
 end

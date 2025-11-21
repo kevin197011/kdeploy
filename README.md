@@ -44,6 +44,7 @@
 - 📝 **优雅的 Ruby DSL**: 简单而富有表现力的任务定义语法
 - 🚀 **并发执行**: 跨多个主机的高效并行任务处理
 - 📤 **文件上传支持**: 通过 SCP 轻松部署文件和模板
+- 📁 **目录同步功能**: 递归同步目录，支持文件过滤和删除多余文件
 - 📊 **任务状态跟踪**: 实时执行监控，提供详细输出
 - 🔄 **ERB 模板支持**: 支持变量替换的动态配置生成
 - 🎯 **基于角色的部署**: 针对特定服务器角色进行有组织的部署
@@ -471,6 +472,48 @@ upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
 - `source`: 本地 ERB 模板文件路径
 - `destination`: 远程文件路径
 - `variables`: 用于模板渲染的变量哈希
+
+#### `sync` - 同步目录
+
+递归同步本地目录到远程服务器，支持文件过滤和删除多余文件。
+
+```ruby
+# 基本同步
+sync "./app", "/var/www/app"
+
+# 同步并忽略特定文件/目录
+sync "./app", "/var/www/app",
+  ignore: [".git", "*.log", "node_modules", "*.tmp"]
+
+# 同步并删除远程多余文件
+sync "./app", "/var/www/app",
+  ignore: [".git", "*.log"],
+  delete: true
+
+# 排除特定文件（与 ignore 相同，但语义更清晰）
+sync "./config", "/etc/app",
+  exclude: ["*.example", "*.bak", ".env.local"]
+```
+
+**参数:**
+- `source`: 本地源目录路径
+- `destination`: 远程目标目录路径
+- `ignore`: 要忽略的文件/目录模式数组（支持 .gitignore 风格的通配符）
+- `exclude`: 与 `ignore` 相同，用于语义清晰
+- `delete`: 布尔值，是否删除远程目录中不存在于源目录的文件（默认: false）
+
+**忽略模式支持:**
+- `*.log` - 匹配所有 .log 文件
+- `node_modules` - 匹配 node_modules 目录或文件
+- `**/*.tmp` - 递归匹配所有 .tmp 文件
+- `.git` - 匹配 .git 目录
+- `config/*.local` - 匹配 config 目录下的所有 .local 文件
+
+**使用场景:**
+- 部署应用程序代码
+- 同步配置文件目录
+- 同步静态资源文件
+- 保持本地和远程目录结构一致
 
 ### 模板支持
 
@@ -1002,6 +1045,23 @@ task :update_config, roles: :web do
     redis_url: ENV['REDIS_URL']
 
   run "sudo systemctl reload app"
+end
+```
+
+#### 目录同步部署
+
+```ruby
+task :deploy_app, roles: :web do
+  # 同步应用程序代码，忽略开发文件
+  sync "./app", "/var/www/app",
+    ignore: [".git", "*.log", "node_modules", ".env.local", "*.tmp"],
+    delete: true
+
+  # 同步配置文件
+  sync "./config", "/etc/app",
+    exclude: ["*.example", "*.bak"]
+
+  run "sudo systemctl restart app"
 end
 ```
 

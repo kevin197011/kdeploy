@@ -162,6 +162,8 @@ module Kdeploy
         command_executor.execute_upload(command, host_name)
       when :upload_template
         command_executor.execute_upload_template(command, host_name)
+      when :sync
+        command_executor.execute_sync(command, host_name)
       else
         raise ConfigurationError, "Unknown command type: #{command[:type]}"
       end
