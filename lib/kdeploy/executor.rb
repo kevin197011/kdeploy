@@ -38,16 +38,21 @@ module Kdeploy
     def execute_command_on_ssh(ssh, command)
       stdout = String.new
       stderr = String.new
+      exit_status = nil
 
       ssh.open_channel do |channel|
         channel.exec(command) do |_ch, success|
           raise SSHError, "Could not execute command: #{command}" unless success
 
           setup_channel_handlers(channel, stdout, stderr)
+          channel.on_request('exit-status') do |_ch, data|
+            exit_status = data.read_long
+          end
         end
       end
       ssh.loop
-      build_command_result(stdout, stderr, command)
+      raise_nonzero_exit!(command, exit_status, stdout, stderr)
+      build_command_result(stdout, stderr, command, exit_status)
     end
 
     def setup_channel_handlers(channel, stdout, stderr)
@@ -60,12 +65,27 @@ module Kdeploy
       end
     end
 
-    def build_command_result(stdout, stderr, command)
+    def build_command_result(stdout, stderr, command, exit_status)
       {
         stdout: stdout.strip,
         stderr: stderr.strip,
-        command: command
+        command: command,
+        exit_status: exit_status
       }
+    end
+
+    def raise_nonzero_exit!(command, exit_status, stdout, stderr)
+      return if exit_status.nil?
+      return if exit_status.zero?
+
+      raise SSHError.new(
+        "Command exited with status #{exit_status}",
+        nil,
+        command: command,
+        exit_status: exit_status,
+        stdout: stdout.strip,
+        stderr: stderr.strip
+      )
     end
 
     def upload(source, destination, use_sudo: nil)

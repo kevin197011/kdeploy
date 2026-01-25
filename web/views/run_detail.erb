@@ -1,0 +1,42 @@
+<h2>Run #<%= @run.id %></h2>
+<div class="muted">Job: <code><%= @run.job_id %></code></div>
+<div class="actions">
+  <a href="/jobs/<%= @run.job_id %>">Back to job</a>
+  <a href="/runs">Back to runs</a>
+</div>
+
+<h3>Status: <span class="pill <%= @run.status %>"><%= @run.status %></span></h3>
+
+<div class="actions">
+  <form method="post" action="/runs/<%= @run.id %>/cancel" style="display:inline;">
+    <button type="submit">Cancel</button>
+  </form>
+  <form method="post" action="/runs/<%= @run.id %>/rerun" style="display:inline;">
+    <button type="submit">Rerun</button>
+  </form>
+  <span class="muted">cancel_requested: <%= @run.cancel_requested %></span>
+</div>
+
+<h3>Hosts</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Host</th>
+      <th>Status</th>
+      <th>Error</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @host_results.each do |h| %>
+      <tr>
+        <td><code><%= h.host_name %></code></td>
+        <td><span class="pill <%= h.status %>"><%= h.status %></span></td>
+        <td class="muted"><%= h.error %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+
+<h3>Output (text)</h3>
+<pre><%= @run.text_output %></pre>
+

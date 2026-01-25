@@ -127,9 +127,9 @@ module Kdeploy
       begin
         execute_grouped_commands(task, command_executor, name, result, task_name)
       rescue StandardError => e
-        # Ensure result is always set, even on error
-        # Don't re-raise, as it would cause future.value to fail
-        result = { status: :failed, error: "#{e.class}: #{e.message}", output: [] }
+        # Keep any already collected step output for troubleshooting.
+        result[:status] = :failed
+        result[:error] = "#{e.class}: #{e.message}"
       end
 
       # Return the result so it can be collected from the future
@@ -157,9 +157,34 @@ module Kdeploy
           @output.write_line(pastel.dim("    [Step #{index + 1}/#{command_group.length}]"))
         end
 
-        step_result = execute_command_with_context(command_executor, command, name, task_name)
-        result[:output] << step_result
+        begin
+          step_result = execute_command(command_executor, command, name)
+          result[:output] << step_result
+        rescue StandardError => e
+          step = step_description(command)
+          result[:status] = :failed
+          result[:error] = "task=#{task_name} host=#{name} step=#{step} error=#{e.class}: #{e.message}"
+          result[:output] << {
+            type: command[:type],
+            command: step_command_string(command),
+            duration: 0.0,
+            error: "#{e.class}: #{e.message}",
+            output: error_output_for_step(e)
+          }
+          break
+        end
       end
+    end
+
+    def error_output_for_step(error)
+      return nil unless error.is_a?(Kdeploy::SSHError)
+
+      {
+        stdout: error.stdout,
+        stderr: error.stderr,
+        exit_status: error.exit_status,
+        command: error.command
+      }
     end
 
     def execute_command(command_executor, command, host_name)
@@ -177,11 +202,19 @@ module Kdeploy
       end
     end
 
-    def execute_command_with_context(command_executor, command, host_name, task_name)
-      execute_command(command_executor, command, host_name)
-    rescue StandardError => e
-      step = step_description(command)
-      raise StandardError, "task=#{task_name} host=#{host_name} step=#{step} error=#{e.class}: #{e.message}"
+    def step_command_string(command)
+      case command[:type]
+      when :run
+        command[:command].to_s
+      when :upload
+        "upload: #{command[:source]} -> #{command[:destination]}"
+      when :upload_template
+        "upload_template: #{command[:source]} -> #{command[:destination]}"
+      when :sync
+        "sync: #{command[:source]} -> #{command[:destination]}"
+      else
+        command[:type].to_s
+      end
     end
 
     def step_description(command)

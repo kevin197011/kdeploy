@@ -1,0 +1,26 @@
+<h2>Jobs</h2>
+<div class="actions">
+  <a href="/jobs/new">New Job</a>
+</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Name</th>
+      <th>Task file</th>
+      <th>Updated</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @jobs.each do |j| %>
+      <tr>
+        <td><%= j.id %></td>
+        <td><a href="/jobs/<%= j.id %>"><%= j.name %></a></td>
+        <td class="muted"><code><%= j.task_file_path %></code></td>
+        <td class="muted"><%= j.updated_at %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+

@@ -1,0 +1,12 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require 'sequel'
+
+require_relative '../lib/db'
+
+db = Kdeploy::Web::DB.db
+migrations_dir = File.expand_path('../db/migrate', __dir__)
+
+Sequel::Migrator.run(db, migrations_dir)
+puts "Migrated OK (db=#{Kdeploy::Web::DB.default_url})"

@@ -1,0 +1,26 @@
+<h2><%= @job.id ? "Edit Job ##{@job.id}" : "New Job" %></h2>
+
+<form method="post" action="<%= @job.id ? "/jobs/#{@job.id}" : "/jobs" %>">
+  <div class="row">
+    <div>
+      <label>Name</label>
+      <input name="name" value="<%= @job.name %>" required />
+    </div>
+    <div>
+      <label>Task file path</label>
+      <input name="task_file_path" value="<%= @job.task_file_path %>" required />
+    </div>
+  </div>
+
+  <div style="margin-top: 12px;">
+    <label>Default variables (JSON)</label>
+    <textarea name="default_variables_json" rows="6"><%= @job.default_variables_json || "{}" %></textarea>
+    <div class="muted">Example: <code>{"domain_name":"example.com","port":3000}</code></div>
+  </div>
+
+  <div class="actions">
+    <button type="submit">Save</button>
+    <a href="/jobs">Cancel</a>
+  </div>
+</form>
+

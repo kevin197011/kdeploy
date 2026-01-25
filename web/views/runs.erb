@@ -1,0 +1,27 @@
+<h2>Runs</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>ID</th>
+      <th>Job</th>
+      <th>Status</th>
+      <th>Task</th>
+      <th>Started</th>
+      <th>Finished</th>
+    </tr>
+  </thead>
+  <tbody>
+    <% @runs.each do |r| %>
+      <tr>
+        <td><a href="/runs/<%= r.id %>"><%= r.id %></a></td>
+        <td class="muted"><%= r.job_id %></td>
+        <td><span class="pill <%= r.status %>"><%= r.status %></span></td>
+        <td class="muted"><%= r.task_name %></td>
+        <td class="muted"><%= r.started_at %></td>
+        <td class="muted"><%= r.finished_at %></td>
+      </tr>
+    <% end %>
+  </tbody>
+</table>
+

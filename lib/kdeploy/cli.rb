@@ -142,21 +142,24 @@ module Kdeploy
       print_summary(results, formatter) if show_summary
     end
 
-    def print_host_result(_host, result, formatter)
+    def print_host_result(host, result, formatter)
       if %i[success changed].include?(result[:status])
-        print_success_result(result, formatter)
+        print_success_result(host, result, formatter)
       else
-        print_failure_result(result, formatter)
+        print_failure_result(host, result, formatter)
       end
+
+      duration = formatter.calculate_host_duration(result)
+      puts "#{formatter.host_prefix(host)}#{formatter.format_host_completed(duration)}" if duration.positive?
     end
 
-    def print_success_result(result, formatter)
+    def print_success_result(host, result, formatter)
       shown = {}
       grouped = group_output_by_type(result[:output])
 
       grouped.each do |type, steps|
         output_lines = format_steps_by_type(type, steps, shown, formatter)
-        output_lines.each { |line| puts line }
+        output_lines.each { |line| puts "#{formatter.host_prefix(host)}#{line}" }
       end
     end
 
@@ -179,9 +182,21 @@ module Kdeploy
       end
     end
 
-    def print_failure_result(result, formatter)
+    def print_failure_result(host, result, formatter)
       error_message = extract_error_message(result)
-      puts formatter.format_error(error_message)
+      puts "#{formatter.host_prefix(host)}#{formatter.format_error(error_message)}"
+
+      # On failure, show steps that were executed (and any captured output)
+      # to make troubleshooting easier, even if --debug is not enabled.
+      return unless result[:output].is_a?(Array) && result[:output].any?
+
+      debug_formatter = OutputFormatter.new(debug: true)
+      shown = {}
+      grouped = group_output_by_type(result[:output])
+      grouped.each do |type, steps|
+        output_lines = format_steps_by_type(type, steps, shown, debug_formatter)
+        output_lines.each { |line| puts "#{debug_formatter.host_prefix(host)}#{line}" }
+      end
     end
 
     def print_summary(results, formatter)
@@ -214,6 +229,9 @@ module Kdeploy
         task_results = execute_single_task(task)
         # Collect results for final summary
         all_results[task] = task_results if task_results
+
+        # Stop executing remaining tasks once any host failed for this task.
+        break if task_failed?(task_results)
       end
 
       # Show combined summary at the end for all tasks
@@ -273,6 +291,12 @@ module Kdeploy
       all_results.values.any? do |task_results|
         task_results.values.any? { |result| result[:status] == :failed }
       end
+    end
+
+    def task_failed?(task_results)
+      return false unless task_results.is_a?(Hash)
+
+      task_results.values.any? { |result| result[:status] == :failed }
     end
 
     def print_all_tasks_summary(all_results)

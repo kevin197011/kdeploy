@@ -20,12 +20,16 @@ module Kdeploy
 
   # Raised when SSH operation fails
   class SSHError < Error
-    def initialize(message, original_error = nil)
+    def initialize(message, original_error = nil, command: nil, exit_status: nil, stdout: nil, stderr: nil)
       super("SSH operation failed: #{message}")
       @original_error = original_error
+      @command = command
+      @exit_status = exit_status
+      @stdout = stdout
+      @stderr = stderr
     end
 
-    attr_reader :original_error
+    attr_reader :original_error, :command, :exit_status, :stdout, :stderr
   end
 
   # Raised when SCP operation fails

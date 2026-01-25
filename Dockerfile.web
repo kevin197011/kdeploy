@@ -1,0 +1,29 @@
+FROM ruby:3.2-slim
+
+ENV APP_HOME=/app
+WORKDIR ${APP_HOME}
+
+# Native extensions (sqlite3, bcrypt_pbkdf, etc.)
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    build-essential \
+    git \
+    sqlite3 \
+    libsqlite3-dev \
+  && rm -rf /var/lib/apt/lists/*
+
+# Copy source so we can build/install the local gem and ship web/
+COPY . .
+
+# Install kdeploy via gem install (from local build)
+RUN gem build kdeploy.gemspec \
+  && gem install ./kdeploy-*.gem
+
+# Web console runtime deps (installed via gem install, not bundler)
+# Rack 3 requires a server handler gem (e.g. webrick/puma). Use webrick for MVP.
+RUN gem install sinatra sequel sqlite3 rackup webrick
+
+EXPOSE 4567
+
+CMD ["ruby", "web/bin/entrypoint.rb"]
+

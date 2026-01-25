@@ -1,0 +1,51 @@
+<h2>Job #<%= @job.id %>: <%= @job.name %></h2>
+<div class="muted">Task file: <code><%= @job.task_file_path %></code></div>
+
+<div class="actions">
+  <a href="/jobs/<%= @job.id %>/edit">Edit</a>
+</div>
+
+<h3>Run</h3>
+<form method="post" action="/jobs/<%= @job.id %>/runs">
+  <div class="row">
+    <div>
+      <label>Task name (optional)</label>
+      <input name="task_name" placeholder="e.g. deploy_web" />
+    </div>
+    <div>
+      <label>Limit hosts (optional)</label>
+      <input name="limit" placeholder="e.g. web01,web02" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px;">
+    <div>
+      <label>Parallel</label>
+      <input name="parallel" placeholder="e.g. 5" />
+    </div>
+    <div>
+      <label>Format</label>
+      <select name="format">
+        <option value="text">text</option>
+        <option value="json">json</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:12px;">
+    <div>
+      <label>Retries</label>
+      <input name="retries" placeholder="e.g. 2" />
+    </div>
+    <div>
+      <label>Retry delay (seconds)</label>
+      <input name="retry_delay" placeholder="e.g. 1" />
+    </div>
+  </div>
+
+  <div class="actions">
+    <button type="submit">Run</button>
+    <a href="/runs">View runs</a>
+  </div>
+</form>
+

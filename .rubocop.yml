@@ -6,6 +6,9 @@ AllCops:
 Metrics:
   Enabled: false
 
+Style/Documentation:
+  Enabled: false
+
 Gemspec/AddRuntimeDependency:
   Enabled: true
 Gemspec/AttributeAssignment:

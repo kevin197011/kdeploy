@@ -1,0 +1,22 @@
+services:
+  kdeploy-web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "4567:4567"
+    environment:
+      PORT: "4567"
+      JOB_CONSOLE_DB: "sqlite:////data/job_console.sqlite3"
+      JOB_CONSOLE_PERMITTED_HOSTS: "localhost,example.org"
+      # 可选：开启鉴权（Bearer token）
+      # JOB_CONSOLE_TOKEN: "change-me"
+      # 可选：资源限制
+      JOB_CONSOLE_MAX_RUNNING: "1"
+      JOB_CONSOLE_MAX_QUEUE: "100"
+    volumes:
+      - kdeploy_web_data:/data
+
+volumes:
+  kdeploy_web_data: {}
+

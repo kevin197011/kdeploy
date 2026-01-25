@@ -75,6 +75,35 @@ RSpec.describe Kdeploy::CLI do
     end
   end
 
+  it 'stops executing remaining tasks after a failure' do
+    Dir.mktmpdir do |dir|
+      deploy = File.join(dir, 'deploy.rb')
+      File.write(deploy, <<~RUBY)
+        host "web01", user: "ubuntu", ip: "10.0.0.1"
+
+        task :t1 do
+          run "echo t1"
+        end
+
+        task :t2 do
+          run "echo t2"
+        end
+      RUBY
+
+      runner = instance_double(Kdeploy::Runner)
+      allow(runner).to receive(:run).and_return(
+        'web01' => { status: :failed, error: 'boom', output: [] }
+      )
+
+      # If the CLI tries to execute the second task, it will create a second Runner.
+      expect(Kdeploy::Runner).to receive(:new).once.and_return(runner)
+
+      expect do
+        described_class.start(['execute', deploy])
+      end.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
+    end
+  end
+
   it 'supports JSON output format for execute results' do
     Dir.mktmpdir do |dir|
       deploy = write_deploy_file(dir)
