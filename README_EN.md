@@ -200,6 +200,11 @@ kdeploy execute deploy.rb deploy_web
 - `--limit HOSTS`: Limit execution to specific hosts (comma-separated)
 - `--parallel NUM`: Number of parallel executions (default: 10)
 - `--dry-run`: Preview mode - show what would be done without executing
+- `--debug`: Debug mode - show detailed stdout/stderr output for `run` steps
+- `--no-banner`: Do not print banner (automation-friendly)
+- `--format FORMAT`: Output format (`text`|`json`, default `text`)
+- `--retries N`: Retry count for network operations (default `0`)
+- `--retry-delay SECONDS`: Delay between retries in seconds (default `1`)
 
 **Examples:**
 ```bash
@@ -211,6 +216,15 @@ kdeploy execute deploy.rb deploy_web --limit web01,web02
 
 # Use custom parallel count
 kdeploy execute deploy.rb deploy_web --parallel 5
+
+# Show detailed stdout/stderr output
+kdeploy execute deploy.rb deploy_web --debug
+
+# Machine-readable JSON output
+kdeploy execute deploy.rb deploy_web --format json --no-banner
+
+# Retry transient network failures
+kdeploy execute deploy.rb deploy_web --retries 3 --retry-delay 1
 
 # Combine options
 kdeploy execute deploy.rb deploy_web --limit web01 --parallel 3 --dry-run

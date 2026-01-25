@@ -1,68 +1,9 @@
 AllCops:
   NewCops: enable
-  TargetRubyVersion: 3.0
 
-# Allow longer methods and classes for deployment scripts
-Metrics/MethodLength:
-  Max: 15
-  Exclude:
-    - 'Rakefile'
-    - 'lib/kdeploy/initializer.rb'
-    - 'sample/**/*'
-
-Metrics/ClassLength:
-  Max: 150
-  Exclude:
-    - 'lib/kdeploy/initializer.rb'
-    - 'lib/kdeploy/output_formatter.rb'
-    - 'lib/kdeploy/cli.rb'
-    - 'lib/kdeploy/executor.rb'
-    - 'lib/kdeploy/runner.rb'
-    - 'lib/kdeploy/post_install.rb'
-
-Metrics/ModuleLength:
-  Max: 120
-  Exclude:
-    - 'lib/kdeploy/dsl.rb'
-
-Metrics/AbcSize:
-  Max: 40
-  Exclude:
-    - 'lib/kdeploy/runner.rb'
-    - 'lib/kdeploy/cli.rb'
-    - 'lib/kdeploy/output_formatter.rb'
-
-Metrics/CyclomaticComplexity:
-  Max: 15
-  Exclude:
-    - 'lib/kdeploy/runner.rb'
-
-Metrics/PerceivedComplexity:
-  Max: 15
-  Exclude:
-    - 'lib/kdeploy/runner.rb'
-
-Metrics/BlockLength:
-  Max: 35
-  Exclude:
-    - 'spec/**/*'
-    - 'sample/**/*'
-    - 'kdeploy.gemspec'
-    - 'lib/kdeploy/runner.rb'
-
-Metrics/ParameterLists:
-  Max: 6
-
-Metrics/MethodLength:
-  Max: 20
-  Exclude:
-    - 'lib/kdeploy/runner.rb'
-    - 'lib/kdeploy/cli.rb'
-    - 'lib/kdeploy/executor.rb'
-    - 'lib/kdeploy/output_formatter.rb'
-    - 'lib/kdeploy/initializer.rb'
-
-Gemspec/RequiredRubyVersion:
+# 该项目包含较多 DSL/CLI 文件，方法长度与复杂度在短期内不适合强行收敛。
+# 先以“可持续的质量基线”为主：保留风格/安全/正确性类 cop，关闭 Metrics 族。
+Metrics:
   Enabled: false
 
 Gemspec/AddRuntimeDependency:

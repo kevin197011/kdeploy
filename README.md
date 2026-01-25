@@ -201,6 +201,11 @@ kdeploy execute deploy.rb deploy_web
 - `--limit HOSTS`: 限制执行到特定主机（逗号分隔）
 - `--parallel NUM`: 并行执行数量（默认: 10）
 - `--dry-run`: 预览模式 - 显示将要执行的操作而不实际执行
+- `--debug`: 调试模式 - 显示 `run` 命令的 stdout/stderr 详细输出（便于排查问题）
+- `--no-banner`: 不输出 Banner（更适合脚本/CI 场景）
+- `--format FORMAT`: 输出格式（`text`|`json`，默认 `text`）
+- `--retries N`: 网络相关操作重试次数（默认 `0`）
+- `--retry-delay SECONDS`: 每次重试间隔秒数（默认 `1`）
 
 **示例:**
 ```bash
@@ -212,6 +217,15 @@ kdeploy execute deploy.rb deploy_web --limit web01,web02
 
 # 使用自定义并行数量
 kdeploy execute deploy.rb deploy_web --parallel 5
+
+# 输出详细调试信息（stdout/stderr）
+kdeploy execute deploy.rb deploy_web --debug
+
+# 机器可读 JSON 输出（便于集成）
+kdeploy execute deploy.rb deploy_web --format json --no-banner
+
+# 重试网络抖动导致的失败
+kdeploy execute deploy.rb deploy_web --retries 3 --retry-delay 1
 
 # 组合选项
 kdeploy execute deploy.rb deploy_web --limit web01 --parallel 3 --dry-run

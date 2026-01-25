@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require 'thor'
+require 'json'
 require 'pastel'
 require 'tty-table'
 require 'tty-box'
@@ -43,9 +44,13 @@ module Kdeploy
 
     desc 'execute TASK_FILE [TASK]', 'Execute deployment tasks from file'
     method_option :limit, type: :string, desc: 'Limit to specific hosts (comma-separated)'
-    method_option :parallel, type: :numeric, default: 10, desc: 'Number of parallel executions'
+    method_option :parallel, type: :numeric, desc: 'Number of parallel executions'
     method_option :dry_run, type: :boolean, desc: 'Show what would be done'
     method_option :debug, type: :boolean, desc: 'Show detailed command output (stdout/stderr)'
+    method_option :no_banner, type: :boolean, desc: 'Do not print banner'
+    method_option :format, type: :string, default: 'text', desc: 'Output format (text|json)'
+    method_option :retries, type: :numeric, desc: 'Retry count for network operations (default: 0)'
+    method_option :retry_delay, type: :numeric, desc: 'Retry delay seconds (default: 1)'
     def execute(task_file, task_name = nil)
       load_config_file
       show_banner_once
@@ -53,7 +58,10 @@ module Kdeploy
       load_task_file(task_file)
 
       tasks_to_run = determine_tasks(task_name)
-      execute_tasks(tasks_to_run)
+      all_results = execute_tasks(tasks_to_run)
+
+      # Exit non-zero if any executed host failed.
+      exit 1 if any_failed?(all_results)
     rescue StandardError => e
       puts Kdeploy::Banner.show_error(e.message)
       exit 1
@@ -189,6 +197,7 @@ module Kdeploy
     def show_banner_once
       @banner_printed ||= false
       return if @banner_printed
+      return if options[:no_banner]
 
       puts Kdeploy::Banner.show
       @banner_printed = true
@@ -208,7 +217,9 @@ module Kdeploy
       end
 
       # Show combined summary at the end for all tasks
-      print_all_tasks_summary(all_results) unless all_results.empty?
+      print_all_tasks_summary(all_results) unless all_results.empty? || options[:format] == 'json'
+
+      all_results
     end
 
     def execute_single_task(task)
@@ -221,7 +232,11 @@ module Kdeploy
       end
 
       if options[:dry_run]
-        print_dry_run(hosts, task)
+        if options[:format] == 'json'
+          print_dry_run_json(hosts, task)
+        else
+          print_dry_run(hosts, task)
+        end
         return nil
       end
 
@@ -232,18 +247,32 @@ module Kdeploy
       output = ConsoleOutput.new
       parallel_count = options[:parallel] || Configuration.default_parallel
       debug_mode = options[:debug] || false
+      retries = options[:retries].nil? ? Configuration.default_retries : options[:retries]
+      retry_delay = options[:retry_delay].nil? ? Configuration.default_retry_delay : options[:retry_delay]
       base_dir = @task_file_dir
       runner = Runner.new(
         hosts, self.class.kdeploy_tasks,
         parallel: parallel_count,
         output: output,
         debug: debug_mode,
-        base_dir: base_dir
+        base_dir: base_dir,
+        retries: retries,
+        retry_delay: retry_delay
       )
       results = runner.run(task)
-      # Don't show summary here - it will be shown at the end for all tasks
-      print_results(results, task, show_summary: false, debug: debug_mode)
+      if options[:format] == 'json'
+        print_results_json(task, results)
+      else
+        # Don't show summary here - it will be shown at the end for all tasks
+        print_results(results, task, show_summary: false, debug: debug_mode)
+      end
       results
+    end
+
+    def any_failed?(all_results)
+      all_results.values.any? do |task_results|
+        task_results.values.any? { |result| result[:status] == :failed }
+      end
     end
 
     def print_all_tasks_summary(all_results)
@@ -269,6 +298,76 @@ module Kdeploy
         counts = all_hosts[host]
         line = formatter.build_summary_line(host, counts, max_host_len)
         puts formatter.colorize_summary_line(line, counts)
+      end
+    end
+
+    def print_results_json(task_name, results)
+      payload = {
+        task: task_name.to_s,
+        results: results.transform_values { |r| serialize_host_result(r) }
+      }
+      puts JSON.generate(payload)
+    end
+
+    def print_dry_run_json(hosts, task_name)
+      tasks = self.class.kdeploy_tasks
+      commands = tasks[task_name][:block].call
+
+      payload = {
+        task: task_name.to_s,
+        dry_run: true,
+        planned: hosts.transform_values do |_config|
+          commands.map { |cmd| serialize_planned_step(cmd) }
+        end
+      }
+
+      puts JSON.generate(payload)
+    end
+
+    def serialize_host_result(result)
+      {
+        status: result[:status].to_s,
+        error: result[:error],
+        steps: Array(result[:output]).map { |step| serialize_step(step) }
+      }
+    end
+
+    def serialize_step(step)
+      out = {
+        type: step[:type].to_s,
+        command: step[:command],
+        duration: step[:duration]
+      }
+
+      out[:result] = step[:result] if step[:type] == :sync
+
+      if options[:debug] && step[:type] == :run && step[:output].is_a?(Hash)
+        out[:stdout] = step[:output][:stdout]
+        out[:stderr] = step[:output][:stderr]
+      end
+
+      out
+    end
+
+    def serialize_planned_step(cmd)
+      case cmd[:type]
+      when :run
+        { type: 'run', command: cmd[:command], sudo: cmd[:sudo] }
+      when :upload
+        { type: 'upload', source: cmd[:source], destination: cmd[:destination] }
+      when :upload_template
+        { type: 'upload_template', source: cmd[:source], destination: cmd[:destination], variables: cmd[:variables] }
+      when :sync
+        {
+          type: 'sync',
+          source: cmd[:source],
+          destination: cmd[:destination],
+          ignore: cmd[:ignore] || [],
+          exclude: cmd[:exclude] || [],
+          delete: cmd[:delete] || false
+        }
+      else
+        { type: cmd[:type].to_s }
       end
     end
 

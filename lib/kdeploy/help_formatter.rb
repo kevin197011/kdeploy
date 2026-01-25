@@ -27,8 +27,13 @@ module Kdeploy
       <<~COMMANDS
         #{@pastel.bright_yellow('🚀')} #{@pastel.bright_white('execute TASK_FILE [TASK]')}     Execute deployment tasks from file
         #{@pastel.dim('    --limit HOSTS')}              Limit to specific hosts (comma-separated)
-        #{@pastel.dim('    --parallel NUM')}             Number of parallel executions (default: 5)
+        #{@pastel.dim('    --parallel NUM')}             Number of parallel executions (default: 10; overridden by .kdeploy.yml)
         #{@pastel.dim('    --dry-run')}                  Show what would be done without executing
+        #{@pastel.dim('    --debug')}                    Show detailed command output (stdout/stderr)
+        #{@pastel.dim('    --no-banner')}                Do not print banner (automation-friendly)
+        #{@pastel.dim('    --format FORMAT')}            Output format (text|json)
+        #{@pastel.dim('    --retries N')}                Retry count for network operations (default: 0; overridden by .kdeploy.yml)
+        #{@pastel.dim('    --retry-delay SECONDS')}      Retry delay seconds (default: 1; overridden by .kdeploy.yml)
 
         #{@pastel.bright_yellow('🆕')} #{@pastel.bright_white('init [DIR]')}                  Initialize new deployment project
         #{@pastel.bright_yellow('ℹ️')} #{@pastel.bright_white('version')}                    Show version information
@@ -54,6 +59,12 @@ module Kdeploy
 
         #{@pastel.dim('# Preview deployment')}
         #{@pastel.bright_cyan('kdeploy execute deploy.rb deploy_web --dry-run')}
+
+        #{@pastel.dim('# Machine-readable output')}
+        #{@pastel.bright_cyan('kdeploy execute deploy.rb deploy_web --format json --no-banner')}
+
+        #{@pastel.dim('# Retry transient network failures')}
+        #{@pastel.bright_cyan('kdeploy execute deploy.rb deploy_web --retries 3 --retry-delay 1')}
       EXAMPLES
     end
 

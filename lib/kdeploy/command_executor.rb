@@ -3,10 +3,12 @@
 module Kdeploy
   # Executes a single command and records execution time
   class CommandExecutor
-    def initialize(executor, output, debug: false)
+    def initialize(executor, output, debug: false, retries: 0, retry_delay: 1)
       @executor = executor
       @output = output
       @debug = debug
+      @retries = retries.to_i
+      @retry_delay = retry_delay.to_f
     end
 
     def execute_run(command, host_name)
@@ -18,21 +20,19 @@ module Kdeploy
       pastel = @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
 
       result, duration = measure_time do
-        @executor.execute(cmd, use_sudo: use_sudo)
+        with_retries { @executor.execute(cmd, use_sudo: use_sudo) }
       end
 
       # Show execution time if command took more than 1 second
       @output.write_line(pastel.dim("    [completed in #{format('%.2f', duration)}s]")) if duration > 1.0
 
-      # Show command output only in debug mode
-      show_command_output(result) if @debug
       { command: cmd, output: result, duration: duration, type: :run }
     end
 
     def execute_upload(command, host_name)
       show_command_header(host_name, :upload, "#{command[:source]} -> #{command[:destination]}")
       _result, duration = measure_time do
-        @executor.upload(command[:source], command[:destination])
+        with_retries { @executor.upload(command[:source], command[:destination]) }
       end
       {
         command: "upload: #{command[:source]} -> #{command[:destination]}",
@@ -44,7 +44,9 @@ module Kdeploy
     def execute_upload_template(command, host_name)
       show_command_header(host_name, :upload_template, "#{command[:source]} -> #{command[:destination]}")
       _result, duration = measure_time do
-        @executor.upload_template(command[:source], command[:destination], command[:variables])
+        with_retries do
+          @executor.upload_template(command[:source], command[:destination], command[:variables])
+        end
       end
       {
         command: "upload_template: #{command[:source]} -> #{command[:destination]}",
@@ -60,13 +62,15 @@ module Kdeploy
       show_command_header(host_name, :sync, description)
 
       result, duration = measure_time do
-        @executor.sync_directory(
-          source,
-          destination,
-          ignore: command[:ignore] || [],
-          exclude: command[:exclude] || [],
-          delete: command[:delete] || false
-        )
+        with_retries do
+          @executor.sync_directory(
+            source,
+            destination,
+            ignore: command[:ignore] || [],
+            exclude: command[:exclude] || [],
+            delete: command[:delete] || false
+          )
+        end
       end
 
       build_sync_result(source, destination, result, duration)
@@ -99,27 +103,16 @@ module Kdeploy
       [result, duration]
     end
 
-    def show_command_output(output)
-      return unless output.is_a?(Hash)
+    def with_retries
+      attempts = 0
+      begin
+        attempts += 1
+        yield
+      rescue SSHError, SCPError, TemplateError
+        raise if attempts > (@retries + 1)
 
-      pastel = @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
-      show_stdout(output[:stdout])
-      show_stderr(output[:stderr], pastel)
-    end
-
-    def show_stdout(stdout)
-      return unless stdout && !stdout.empty?
-
-      stdout.each_line do |line|
-        @output.write_line("    #{line.rstrip}") unless line.strip.empty?
-      end
-    end
-
-    def show_stderr(stderr, pastel)
-      return unless stderr && !stderr.empty?
-
-      stderr.each_line do |line|
-        @output.write_line(pastel.green("    #{line.rstrip}")) unless line.strip.empty?
+        sleep(@retry_delay) if @retry_delay.positive?
+        retry
       end
     end
 

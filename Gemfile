@@ -9,3 +9,4 @@ gemspec
 gem 'irb'
 gem 'logger', '~> 1.7'
 gem 'rspec', '~> 3.13'
+gem 'rubocop', '~> 1.82', group: :development

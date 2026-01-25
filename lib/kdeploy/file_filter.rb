@@ -47,8 +47,14 @@ module Kdeploy
                   .gsub('[!', '[^')          # [^...] negation
                   .gsub('[', '[')            # Character class
 
-      # Anchor to start if pattern doesn't start with **
-      regex_str = "^#{regex_str}" unless pattern.start_with?('**')
+      # gitignore semantics: patterns without a slash match in any directory.
+      # e.g. "*.log" should match "a.log" and "logs/a.log".
+      if !pattern.include?('/') && !pattern.start_with?('**')
+        regex_str = "(?:^|.*/)#{regex_str}"
+      elsif !pattern.start_with?('**')
+        regex_str = "^#{regex_str}"
+      end
+
       # Match end of string or directory separator
       regex_str = "#{regex_str}(/|$)" unless pattern.end_with?('*') || pattern.end_with?('**')
 
@@ -64,8 +70,13 @@ module Kdeploy
     def relative_path_for(file_path, base_path)
       return file_path.to_s unless base_path
 
+      file = Pathname.new(file_path.to_s)
+
+      # If caller already passed a relative path (common in sync traversal),
+      # keep it as-is to avoid Pathname#relative_path_from prefix errors.
+      return file_path.to_s unless file.absolute?
+
       base = Pathname.new(base_path)
-      file = Pathname.new(file_path)
       file.relative_path_from(base).to_s
     end
   end

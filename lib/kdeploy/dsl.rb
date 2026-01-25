@@ -5,10 +5,31 @@ require 'set'
 module Kdeploy
   # Domain-specific language for defining hosts, roles, and tasks
   module DSL
+    def self.included(base)
+      # Support `include Kdeploy::DSL` by promoting the DSL methods to class methods.
+      # This keeps tests and external integrations simpler while preserving the
+      # primary usage pattern (CLI uses `extend DSL`).
+      base.extend(self)
+    end
+
     def self.extended(base)
       base.instance_variable_set(:@kdeploy_hosts, {})
       base.instance_variable_set(:@kdeploy_tasks, {})
       base.instance_variable_set(:@kdeploy_roles, {})
+    end
+
+    # Stable read accessors for tests/integrations.
+    # Keep these as aliases so internal storage can evolve without breaking callers.
+    def hosts
+      kdeploy_hosts
+    end
+
+    def tasks
+      kdeploy_tasks
+    end
+
+    def roles
+      kdeploy_roles
     end
 
     def kdeploy_hosts

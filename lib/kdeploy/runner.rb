@@ -6,21 +6,23 @@ module Kdeploy
   # Concurrent task runner for executing tasks across multiple hosts
   class Runner
     def initialize(hosts, tasks, parallel: Configuration.default_parallel, output: ConsoleOutput.new,
-                   debug: false, base_dir: nil)
+                   debug: false, base_dir: nil, retries: Configuration.default_retries,
+                   retry_delay: Configuration.default_retry_delay)
       @hosts = hosts
       @tasks = tasks
       @parallel = parallel
       @output = output
       @debug = debug
       @base_dir = base_dir
+      @retries = retries
+      @retry_delay = retry_delay
       @pool = Concurrent::FixedThreadPool.new(@parallel)
       @results = Concurrent::Hash.new
     end
 
     def run(task_name)
       task = find_task(task_name)
-      results = execute_concurrent_tasks(task)
-      results
+      execute_concurrent_tasks(task, task_name)
     ensure
       @pool.shutdown
     end
@@ -33,8 +35,8 @@ module Kdeploy
       task
     end
 
-    def execute_concurrent_tasks(task)
-      futures = create_task_futures(task)
+    def execute_concurrent_tasks(task, task_name)
+      futures = create_task_futures(task, task_name)
 
       # If no hosts, return empty results immediately
       return @results if futures.empty?
@@ -97,47 +99,53 @@ module Kdeploy
       @results
     end
 
-    def create_task_futures(task)
+    def create_task_futures(task, task_name)
       # Store host names in order to match with futures
       @host_names = @hosts.keys
       @hosts.map do |name, config|
         Concurrent::Future.execute(executor: @pool) do
-          execute_task_for_host(name, config, task)
+          execute_task_for_host(name, config, task, task_name)
         end
       end
     end
 
     private
 
-    def execute_task_for_host(name, config, task)
+    def execute_task_for_host(name, config, task, task_name)
       # Add base_dir to config for path resolution
       config_with_base_dir = config.merge(base_dir: @base_dir)
       executor = Executor.new(config_with_base_dir)
-      command_executor = CommandExecutor.new(executor, @output, debug: @debug)
+      command_executor = CommandExecutor.new(
+        executor,
+        @output,
+        debug: @debug,
+        retries: @retries,
+        retry_delay: @retry_delay
+      )
       result = { status: :success, output: [] }
 
       begin
-        execute_grouped_commands(task, command_executor, name, result)
+        execute_grouped_commands(task, command_executor, name, result, task_name)
       rescue StandardError => e
         # Ensure result is always set, even on error
         # Don't re-raise, as it would cause future.value to fail
-        result = { status: :failed, error: e.message, output: [] }
+        result = { status: :failed, error: "#{e.class}: #{e.message}", output: [] }
       end
 
       # Return the result so it can be collected from the future
       [name, result]
     end
 
-    def execute_grouped_commands(task, command_executor, name, result)
+    def execute_grouped_commands(task, command_executor, name, result, task_name)
       commands = task[:block].call
       grouped_commands = CommandGrouper.group(commands)
 
       grouped_commands.each_value do |command_group|
-        execute_command_group(command_group, command_executor, name, result)
+        execute_command_group(command_group, command_executor, name, result, task_name)
       end
     end
 
-    def execute_command_group(command_group, command_executor, name, result)
+    def execute_command_group(command_group, command_executor, name, result, task_name)
       first_cmd = command_group.first
       task_desc = CommandGrouper.task_description(first_cmd)
       show_task_header(task_desc)
@@ -149,7 +157,7 @@ module Kdeploy
           @output.write_line(pastel.dim("    [Step #{index + 1}/#{command_group.length}]"))
         end
 
-        step_result = execute_command(command_executor, command, name)
+        step_result = execute_command_with_context(command_executor, command, name, task_name)
         result[:output] << step_result
       end
     end
@@ -166,6 +174,29 @@ module Kdeploy
         command_executor.execute_sync(command, host_name)
       else
         raise ConfigurationError, "Unknown command type: #{command[:type]}"
+      end
+    end
+
+    def execute_command_with_context(command_executor, command, host_name, task_name)
+      execute_command(command_executor, command, host_name)
+    rescue StandardError => e
+      step = step_description(command)
+      raise StandardError, "task=#{task_name} host=#{host_name} step=#{step} error=#{e.class}: #{e.message}"
+    end
+
+    def step_description(command)
+      case command[:type]
+      when :run
+        first = command[:command].to_s.lines.first&.strip
+        "run: #{first}"
+      when :upload
+        "upload: #{command[:source]} -> #{command[:destination]}"
+      when :upload_template
+        "upload_template: #{command[:source]} -> #{command[:destination]}"
+      when :sync
+        "sync: #{command[:source]} -> #{command[:destination]}"
+      else
+        command[:type].to_s
       end
     end
 

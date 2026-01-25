@@ -8,17 +8,23 @@ module Kdeploy
     DEFAULT_PARALLEL = 10
     DEFAULT_SSH_TIMEOUT = 30
     DEFAULT_VERIFY_HOST_KEY = :never
+    DEFAULT_RETRIES = 0
+    DEFAULT_RETRY_DELAY = 1
     CONFIG_FILE_NAME = '.kdeploy.yml'
 
     class << self
       attr_accessor :default_parallel,
                     :default_ssh_timeout,
-                    :default_verify_host_key
+                    :default_verify_host_key,
+                    :default_retries,
+                    :default_retry_delay
 
       def reset
         @default_parallel = DEFAULT_PARALLEL
         @default_ssh_timeout = DEFAULT_SSH_TIMEOUT
         @default_verify_host_key = DEFAULT_VERIFY_HOST_KEY
+        @default_retries = DEFAULT_RETRIES
+        @default_retry_delay = DEFAULT_RETRY_DELAY
       end
 
       def load_from_file(config_path = nil)
@@ -56,6 +62,8 @@ module Kdeploy
         @default_parallel = config['parallel'] if config.key?('parallel')
         @default_ssh_timeout = config['ssh_timeout'] if config.key?('ssh_timeout')
         @default_verify_host_key = parse_verify_host_key(config['verify_host_key']) if config.key?('verify_host_key')
+        @default_retries = config['retries'] if config.key?('retries')
+        @default_retry_delay = config['retry_delay'] if config.key?('retry_delay')
       end
 
       def parse_verify_host_key(value)
