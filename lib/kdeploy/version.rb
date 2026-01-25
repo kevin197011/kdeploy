@@ -2,5 +2,5 @@
 
 # Kdeploy module for version management
 module Kdeploy
-  VERSION = '1.2.35' unless const_defined?(:VERSION)
+  VERSION = '1.2.36' unless const_defined?(:VERSION)
 end

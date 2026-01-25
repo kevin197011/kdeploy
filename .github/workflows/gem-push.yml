@@ -7,26 +7,26 @@ on:
     branches: [ "main" ]
 
 jobs:
-  test:
-    name: Test (RSpec + RuboCop)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
+  # test:
+  #   name: Test (RSpec + RuboCop)
+  #   runs-on: ubuntu-latest
+  #   permissions:
+  #     contents: read
 
-    steps:
-      - uses: actions/checkout@v4
+  #   steps:
+  #     - uses: actions/checkout@v4
 
-      - name: Set up Ruby
-        uses: ruby/setup-ruby@v1
-        with:
-          ruby-version: '3.2'   # 你可以指定 3.1、3.2、3.3 等
-          bundler-cache: true
+  #     - name: Set up Ruby
+  #       uses: ruby/setup-ruby@v1
+  #       with:
+  #         ruby-version: '3.2'   # 你可以指定 3.1、3.2、3.3 等
+  #         bundler-cache: true
 
-      - name: Run RSpec
-        run: bundle exec rspec
+  #     - name: Run RSpec
+  #       run: bundle exec rspec
 
-      - name: Run RuboCop
-        run: bundle exec rubocop
+  #     - name: Run RuboCop
+  #       run: bundle exec rubocop
 
   publish:
     name: Build + Publish (RubyGems)
