@@ -42,7 +42,13 @@ jobs:
         uses: ruby/setup-ruby@v1
         with:
           ruby-version: '3.2'
-          bundler-cache: true
+          bundler-cache: false
+
+      - name: Ensure Linux platform in lockfile
+        run: bundle lock --add-platform x86_64-linux
+
+      - name: Install dependencies
+        run: bundle install --jobs 4
 
       - name: Publish to RubyGems
         run: |
