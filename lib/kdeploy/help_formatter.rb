@@ -34,6 +34,8 @@ module Kdeploy
         #{@pastel.dim('    --format FORMAT')}            Output format (text|json)
         #{@pastel.dim('    --retries N')}                Retry count for network operations (default: 0; overridden by .kdeploy.yml)
         #{@pastel.dim('    --retry-delay SECONDS')}      Retry delay seconds (default: 1; overridden by .kdeploy.yml)
+        #{@pastel.dim('    --retry-on-nonzero')}         Retry commands on nonzero exit status (default: false; overridden by .kdeploy.yml)
+        #{@pastel.dim('    --timeout SECONDS')}          Per-host execution timeout seconds (default: none; overridden by .kdeploy.yml)
 
         #{@pastel.bright_yellow('🆕')} #{@pastel.bright_white('init [DIR]')}                  Initialize new deployment project
         #{@pastel.bright_yellow('ℹ️')} #{@pastel.bright_white('version')}                    Show version information

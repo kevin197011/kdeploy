@@ -50,6 +50,7 @@ module Kdeploy
 
       post '/jobs' do
         payload = params
+        validate_task_file_path!(payload.fetch('task_file_path'))
         job = Models::Job.create(
           name: payload.fetch('name'),
           task_file_path: payload.fetch('task_file_path'),
@@ -75,6 +76,7 @@ module Kdeploy
       post '/jobs/:id' do
         job = Models::Job[params.fetch('id')]
         halt 404, 'job not found' unless job
+        validate_task_file_path!(params.fetch('task_file_path'))
         job.update(
           name: params.fetch('name'),
           task_file_path: params.fetch('task_file_path'),
@@ -137,6 +139,7 @@ module Kdeploy
 
       post '/api/jobs' do
         payload = read_json_body
+        validate_task_file_path!(payload.fetch('task_file_path'))
         job = Models::Job.create(
           name: payload.fetch('name'),
           task_file_path: payload.fetch('task_file_path'),
@@ -158,6 +161,7 @@ module Kdeploy
         job = Models::Job[params.fetch('id')]
         halt 404, JSON.generate(error: 'job not found') unless job
         payload = read_json_body
+        validate_task_file_path!(payload.fetch('task_file_path', job.task_file_path))
         job.update(
           name: payload.fetch('name', job.name),
           task_file_path: payload.fetch('task_file_path', job.task_file_path),
@@ -234,8 +238,26 @@ module Kdeploy
         if request.path_info.start_with?('/api/')
           JSON.generate(error: e.class.to_s, message: e.message)
         else
-          "error: #{e.class}: #{e.message}"
+          render_error_page('Something went wrong', "#{e.class}: #{e.message}", status: 500)
         end
+      end
+
+      def validate_task_file_path!(path)
+        ExecutionAdapter.ensure_task_path_allowed!(path)
+      rescue StandardError => e
+        if request.path_info.start_with?('/api/')
+          status 422
+          halt JSON.generate(error: e.message)
+        else
+          render_error_page('Invalid task file', e.message, status: 422, hint: 'Check JOB_CONSOLE_TASK_BASE_DIR.')
+        end
+      end
+
+      def render_error_page(title, message, status:, hint: nil)
+        @error_title = title
+        @error_message = message
+        @error_hint = hint
+        halt status, erb(:error)
       end
     end
   end

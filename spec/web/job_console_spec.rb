@@ -4,6 +4,8 @@ require 'json'
 require 'rack/test'
 
 ENV['JOB_CONSOLE_DB'] = 'sqlite::memory:'
+ENV['JOB_CONSOLE_TASK_BASE_DIR'] = File.expand_path('../..', __dir__)
+ENV['JOB_CONSOLE_TOKEN'] = 'test-token'
 
 require_relative '../../web/app/app'
 
@@ -14,16 +16,18 @@ RSpec.describe Kdeploy::Web::App do
     described_class
   end
 
+  let(:task_path) { File.expand_path('../../sample/deploy.rb', __dir__) }
+
   before do
     # Force reconnect for in-memory DB
     Kdeploy::Web::DB.connect!(url: ENV.fetch('JOB_CONSOLE_DB', nil))
     migrations_dir = File.expand_path('../../web/db/migrate', __dir__)
     Sequel::Migrator.run(Kdeploy::Web::DB.db, migrations_dir)
-    ENV.delete('JOB_CONSOLE_TOKEN')
   end
 
   it 'creates and lists jobs via API' do
-    post '/api/jobs', JSON.generate(name: 'demo', task_file_path: 'sample/deploy.rb', default_variables: { a: 1 }),
+    header 'Authorization', 'Bearer test-token'
+    post '/api/jobs', JSON.generate(name: 'demo', task_file_path: task_path, default_variables: { a: 1 }),
          'CONTENT_TYPE' => 'application/json'
     expect(last_response.status).to eq(201)
     created = JSON.parse(last_response.body)
@@ -36,16 +40,16 @@ RSpec.describe Kdeploy::Web::App do
     expect(list.first['name']).to eq('demo')
   end
 
-  it 'rejects unauthorized requests when token is set' do
-    ENV['JOB_CONSOLE_TOKEN'] = 't'
+  it 'rejects unauthorized requests when token is missing' do
     get '/api/jobs'
     expect(last_response.status).to eq(401)
   end
 
   it 'cancels a queued run via API' do
+    header 'Authorization', 'Bearer test-token'
     job = Kdeploy::Web::Models::Job.create(
       name: 'demo',
-      task_file_path: 'sample/deploy.rb',
+      task_file_path: task_path,
       default_variables_json: '{}',
       created_at: Time.now,
       updated_at: Time.now
@@ -62,9 +66,10 @@ RSpec.describe Kdeploy::Web::App do
   end
 
   it 'creates a rerun via API' do
+    header 'Authorization', 'Bearer test-token'
     job = Kdeploy::Web::Models::Job.create(
       name: 'demo',
-      task_file_path: 'sample/deploy.rb',
+      task_file_path: task_path,
       default_variables_json: '{}',
       created_at: Time.now,
       updated_at: Time.now

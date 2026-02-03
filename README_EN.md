@@ -206,6 +206,8 @@ kdeploy execute deploy.rb deploy_web
 - `--format FORMAT`: Output format (`text`|`json`, default `text`)
 - `--retries N`: Retry count for network operations (default `0`)
 - `--retry-delay SECONDS`: Delay between retries in seconds (default `1`)
+- `--retry-on-nonzero`: Retry commands on nonzero exit status (default `false`)
+- `--timeout SECONDS`: Per-host execution timeout in seconds (default: none)
 
 **Examples:**
 ```bash
@@ -226,6 +228,12 @@ kdeploy execute deploy.rb deploy_web --format json --no-banner
 
 # Retry transient network failures
 kdeploy execute deploy.rb deploy_web --retries 3 --retry-delay 1
+
+# Retry on nonzero exit status
+kdeploy execute deploy.rb deploy_web --retries 2 --retry-on-nonzero
+
+# Set per-host timeout (seconds)
+kdeploy execute deploy.rb deploy_web --timeout 120
 
 # Combine options
 kdeploy execute deploy.rb deploy_web --limit web01 --parallel 3 --dry-run

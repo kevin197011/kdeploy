@@ -51,6 +51,8 @@ module Kdeploy
     method_option :format, type: :string, default: 'text', desc: 'Output format (text|json)'
     method_option :retries, type: :numeric, desc: 'Retry count for network operations (default: 0)'
     method_option :retry_delay, type: :numeric, desc: 'Retry delay seconds (default: 1)'
+    method_option :retry_on_nonzero, type: :boolean, desc: 'Retry commands on nonzero exit status (default: false)'
+    method_option :timeout, type: :numeric, desc: 'Per-host execution timeout seconds (default: none)'
     def execute(task_file, task_name = nil)
       load_config_file
       show_banner_once
@@ -267,6 +269,9 @@ module Kdeploy
       debug_mode = options[:debug] || false
       retries = options[:retries].nil? ? Configuration.default_retries : options[:retries]
       retry_delay = options[:retry_delay].nil? ? Configuration.default_retry_delay : options[:retry_delay]
+      retry_on_nonzero =
+        options[:retry_on_nonzero].nil? ? Configuration.default_retry_on_nonzero : options[:retry_on_nonzero]
+      host_timeout = options[:timeout].nil? ? Configuration.default_host_timeout : options[:timeout]
       base_dir = @task_file_dir
       runner = Runner.new(
         hosts, self.class.kdeploy_tasks,
@@ -275,7 +280,9 @@ module Kdeploy
         debug: debug_mode,
         base_dir: base_dir,
         retries: retries,
-        retry_delay: retry_delay
+        retry_delay: retry_delay,
+        retry_on_nonzero: retry_on_nonzero,
+        host_timeout: host_timeout
       )
       results = runner.run(task)
       if options[:format] == 'json'
@@ -362,6 +369,10 @@ module Kdeploy
         command: step[:command],
         duration: step[:duration]
       }
+
+      if step[:output].is_a?(Hash) && step[:output].key?(:exit_status)
+        out[:exit_status] = step[:output][:exit_status]
+      end
 
       out[:result] = step[:result] if step[:type] == :sync
 

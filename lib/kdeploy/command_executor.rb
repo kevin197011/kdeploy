@@ -3,12 +3,13 @@
 module Kdeploy
   # Executes a single command and records execution time
   class CommandExecutor
-    def initialize(executor, output, debug: false, retries: 0, retry_delay: 1)
+    def initialize(executor, output, debug: false, retries: 0, retry_delay: 1, retry_on_nonzero: false)
       @executor = executor
       @output = output
       @debug = debug
       @retries = retries.to_i
       @retry_delay = retry_delay.to_f
+      @retry_on_nonzero = retry_on_nonzero
     end
 
     def execute_run(command, _host_name)
@@ -91,7 +92,10 @@ module Kdeploy
       begin
         attempts += 1
         yield
-      rescue SSHError, SCPError, TemplateError
+      rescue SSHError, SCPError, TemplateError => e
+        if e.is_a?(SSHError) && e.exit_status && !@retry_on_nonzero
+          raise
+        end
         raise if attempts > (@retries + 1)
 
         sleep(@retry_delay) if @retry_delay.positive?

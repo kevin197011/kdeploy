@@ -32,6 +32,8 @@ module Kdeploy
           raise "no hosts matched for task=#{selected_task}" if hosts.empty?
 
           base_dir = File.dirname(File.expand_path(task_file_path))
+          host_timeout = env_float('JOB_CONSOLE_HOST_TIMEOUT') || Kdeploy::Configuration.default_host_timeout
+          retry_on_nonzero = env_bool('JOB_CONSOLE_RETRY_ON_NONZERO', default: Kdeploy::Configuration.default_retry_on_nonzero)
           runner = Kdeploy::Runner.new(
             hosts,
             runtime.kdeploy_tasks,
@@ -40,7 +42,9 @@ module Kdeploy
             debug: false,
             base_dir: base_dir,
             retries: retries || Kdeploy::Configuration.default_retries,
-            retry_delay: retry_delay || Kdeploy::Configuration.default_retry_delay
+            retry_delay: retry_delay || Kdeploy::Configuration.default_retry_delay,
+            retry_on_nonzero: retry_on_nonzero,
+            host_timeout: host_timeout
           )
 
           results = runner.run(selected_task)
@@ -56,13 +60,31 @@ module Kdeploy
           [results, text_output, json_output]
         end
 
+        def ensure_task_path_allowed!(task_file_path)
+          base_dir = ENV.fetch('JOB_CONSOLE_TASK_BASE_DIR') do
+            raise 'JOB_CONSOLE_TASK_BASE_DIR is required'
+          end
+
+          base_dir = File.expand_path(base_dir)
+          raise 'JOB_CONSOLE_TASK_BASE_DIR must be a directory' unless File.directory?(base_dir)
+
+          path = File.expand_path(task_file_path)
+          raise "task file not found: #{task_file_path}" unless File.exist?(path)
+
+          base_prefix = base_dir.end_with?(File::SEPARATOR) ? base_dir : "#{base_dir}#{File::SEPARATOR}"
+          unless path == base_dir || path.start_with?(base_prefix)
+            raise "task file outside base dir: #{path}"
+          end
+
+          path
+        end
+
         private
 
         def build_runtime(task_file_path)
-          raise "task file not found: #{task_file_path}" unless File.exist?(task_file_path)
-
+          path = ensure_task_path_allowed!(task_file_path)
           runtime = Class.new(Runtime)
-          runtime.module_eval(File.read(task_file_path), task_file_path)
+          runtime.module_eval(File.read(path), path)
           runtime
         end
 
@@ -106,6 +128,20 @@ module Kdeploy
           end
 
           io.string
+        end
+
+        def env_float(key)
+          raw = ENV.fetch(key, nil)
+          return nil if raw.nil? || raw.to_s.strip.empty?
+
+          raw.to_f
+        end
+
+        def env_bool(key, default: false)
+          raw = ENV.fetch(key, nil)
+          return default if raw.nil? || raw.to_s.strip.empty?
+
+          %w[1 true yes on].include?(raw.to_s.downcase)
         end
       end
     end

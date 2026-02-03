@@ -207,6 +207,8 @@ kdeploy execute deploy.rb deploy_web
 - `--format FORMAT`: 输出格式（`text`|`json`，默认 `text`）
 - `--retries N`: 网络相关操作重试次数（默认 `0`）
 - `--retry-delay SECONDS`: 每次重试间隔秒数（默认 `1`）
+- `--retry-on-nonzero`: 非零退出码重试开关（默认 `false`）
+- `--timeout SECONDS`: 单 host 执行超时（秒，默认不启用）
 
 **示例:**
 ```bash
@@ -227,6 +229,12 @@ kdeploy execute deploy.rb deploy_web --format json --no-banner
 
 # 重试网络抖动导致的失败
 kdeploy execute deploy.rb deploy_web --retries 3 --retry-delay 1
+
+# 对非零退出码进行重试
+kdeploy execute deploy.rb deploy_web --retries 2 --retry-on-nonzero
+
+# 设置单 host 超时（秒）
+kdeploy execute deploy.rb deploy_web --timeout 120
 
 # 组合选项
 kdeploy execute deploy.rb deploy_web --limit web01 --parallel 3 --dry-run
@@ -1141,4 +1149,3 @@ end
 ---
 
 **为 DevOps 社区用 ❤️ 制作**
-
