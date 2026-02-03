@@ -52,7 +52,7 @@ task :deploy_node_exporter do
   run 'systemctl daemon-reload', sudo: true
   service 'node-exporter', action: %i[enable start]
   run 'sleep 2'
-  run 'systemctl status node-exporter --no-pager', sudo: true
+  run 'systemctl status node-exporter --no-pager || true', sudo: true
 end
 
 # Start node-exporter service
@@ -69,7 +69,7 @@ end
 task :restart_node_exporter do
   service 'node-exporter', action: :restart
   run 'sleep 2'
-  run 'systemctl status node-exporter --no-pager', sudo: true
+  run 'systemctl status node-exporter --no-pager || true', sudo: true
 end
 
 # Check node-exporter status

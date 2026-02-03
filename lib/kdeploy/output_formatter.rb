@@ -58,12 +58,11 @@ module Kdeploy
     def format_file_step(step, type, prefix)
       duration_str = format_duration(step[:duration])
       status_str = format_step_status(step)
-      icon = type == :upload ? '📤' : '📝'
       file_path = step[:command].sub(prefix, '')
       # Truncate long paths for cleaner output
       display_path = file_path.length > 50 ? "...#{file_path[-47..]}" : file_path
       color_method = type == :upload ? :green : :yellow
-      @pastel.dim("    #{icon} ") + @pastel.send(color_method, display_path) + duration_str + " #{status_str}"
+      @pastel.dim('    ') + @pastel.send(color_method, display_path) + duration_str + " #{status_str}"
     end
 
     def format_run_steps(steps, _shown = nil)
@@ -77,7 +76,7 @@ module Kdeploy
       command_line = first_meaningful_command_line(step[:command].to_s)
       # Truncate long commands for cleaner output
       display_cmd = command_line.length > 60 ? "#{command_line[0..57]}..." : command_line
-      output << (@pastel.dim('    • ') + @pastel.cyan(display_cmd) + duration_str + " #{status_str}")
+      output << (@pastel.dim('    ') + @pastel.cyan(display_cmd) + duration_str + " #{status_str}")
       # Only show multiline details in debug mode
       if @debug
         output.concat(format_multiline_command(step[:command]))
@@ -264,7 +263,7 @@ module Kdeploy
       stats << @pastel.yellow("#{deleted} deleted") if deleted.positive?
       stats_str = stats.any? ? " (#{stats.join(', ')})" : " (#{total} files)"
 
-      @pastel.dim('    📁 ') + @pastel.cyan(display_path) + @pastel.dim(stats_str) + duration_str + " #{status_str}"
+      @pastel.dim('    ') + @pastel.cyan(display_path) + @pastel.dim(stats_str) + duration_str + " #{status_str}"
     end
 
     def format_step_status(step)
