@@ -7,7 +7,8 @@ module Kdeploy
   class Runner
     def initialize(hosts, tasks, parallel: Configuration.default_parallel, output: ConsoleOutput.new,
                    debug: false, base_dir: nil, retries: Configuration.default_retries,
-                   retry_delay: Configuration.default_retry_delay, retry_on_nonzero: Configuration.default_retry_on_nonzero,
+                   retry_delay: Configuration.default_retry_delay,
+                   retry_on_nonzero: Configuration.default_retry_on_nonzero,
                    host_timeout: Configuration.default_host_timeout)
       @hosts = hosts
       @tasks = tasks

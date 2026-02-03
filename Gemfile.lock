@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    kdeploy (1.2.41)
+    kdeploy (1.3.0)
       bcrypt_pbkdf (~> 1.1)
       concurrent-ruby (~> 1.3)
       ed25519 (~> 1.2)
