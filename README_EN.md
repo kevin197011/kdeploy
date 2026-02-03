@@ -97,6 +97,12 @@ kdeploy version
 
 You should see the version information and banner.
 
+**If `kdeploy` is not found**: the gem executable directory may not be in your PATH. Add to `~/.zshrc` or `~/.bashrc` then run `source ~/.zshrc`:
+
+```bash
+export PATH="$(ruby -e 'puts Gem.bindir'):$PATH"
+```
+
 ### Shell Completion
 
 Kdeploy automatically configures shell completion during installation. If needed, manually add to your shell config:
@@ -136,35 +142,30 @@ This creates a new directory with:
 
 ### 2. Configure Hosts and Tasks
 
-Edit `deploy.rb`:
+Edit `deploy.rb` (using Chef-style resource DSL):
 
 ```ruby
 # Define hosts
 host "web01", user: "ubuntu", ip: "10.0.0.1", key: "~/.ssh/id_rsa"
 host "web02", user: "ubuntu", ip: "10.0.0.2", key: "~/.ssh/id_rsa"
-
-# Define roles
 role :web, %w[web01 web02]
 
 # Define deployment task
-task :deploy, roles: :web do
-  run <<~SHELL
-    sudo systemctl stop nginx
-    echo "Deploying application..."
-  SHELL
-
-  upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-    domain_name: "example.com",
-    port: 3000
-
-  run "sudo systemctl start nginx"
+task :deploy_web, roles: :web do
+  package "nginx"
+  directory "/etc/nginx/conf.d"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb",
+    variables: { domain_name: "example.com", port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t", sudo: true
+  service "nginx", action: %i[enable restart]
 end
 ```
 
 ### 3. Run Deployment
 
 ```bash
-kdeploy execute deploy.rb deploy
+kdeploy execute deploy.rb deploy_web
 ```
 
 ## 📖 Usage Guide
@@ -355,7 +356,7 @@ end
 
 ```ruby
 task :deploy_web, roles: :web do
-  run "sudo systemctl restart nginx"
+  service "nginx", action: :restart
 end
 ```
 
@@ -363,29 +364,22 @@ end
 
 ```ruby
 task :maintenance, on: %w[web01] do
-  run <<~SHELL
-    sudo systemctl stop nginx
-    sudo apt-get update && sudo apt-get upgrade -y
-    sudo systemctl start nginx
-  SHELL
+  service "nginx", action: :stop
+  run "apt-get update && apt-get upgrade -y", sudo: true
+  service "nginx", action: %i[start enable]
 end
 ```
 
 #### Task with Multiple Commands
 
 ```ruby
-task :deploy, roles: :web do
-  # Stop service
-  run "sudo systemctl stop nginx"
-
-  # Upload configuration
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
-
-  # Start service
-  run "sudo systemctl start nginx"
-
-  # Verify status
-  run "sudo systemctl status nginx"
+task :deploy_web, roles: :web do
+  package "nginx"
+  directory "/etc/nginx/conf.d"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t", sudo: true
+  service "nginx", action: %i[enable restart]
 end
 ```
 
@@ -542,8 +536,8 @@ task :deploy_nginx, roles: :web do
   directory "/etc/nginx/conf.d"
   template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
   file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
-  run "nginx -t"
-  service "nginx", action: [:enable, :restart]
+  run "nginx -t", sudo: true
+  service "nginx", action: %i[enable restart]
 end
 ```
 
@@ -593,11 +587,8 @@ http {
 
 ```ruby
 task :deploy_config do
-  upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-    domain_name: "example.com",
-    port: 3000,
-    worker_processes: 4,
-    worker_connections: 2048
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb",
+    variables: { domain_name: "example.com", port: 3000, worker_processes: 4, worker_connections: 2048 }
 end
 ```
 
@@ -658,15 +649,11 @@ Use Ruby conditionals in your deployment files:
 
 ```ruby
 task :deploy do
-  if ENV['ENVIRONMENT'] == 'production'
-    run "sudo systemctl stop nginx"
-  end
+  service "nginx", action: :stop if ENV['ENVIRONMENT'] == 'production'
 
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
+  file "/etc/nginx/nginx.conf", source: "./config/nginx.conf"
 
-  if ENV['ENVIRONMENT'] == 'production'
-    run "sudo systemctl start nginx"
-  end
+  service "nginx", action: :start if ENV['ENVIRONMENT'] == 'production'
 end
 ```
 
@@ -689,9 +676,10 @@ end
 
 ```ruby
 task :deploy do
-  run "sudo systemctl stop nginx" || raise "Failed to stop nginx"
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
-  run "sudo systemctl start nginx" || raise "Failed to start nginx"
+  service "nginx", action: :stop
+  file "/etc/nginx/nginx.conf", source: "./config/nginx.conf"
+  run "nginx -t", sudo: true  # run raises on invalid config
+  service "nginx", action: :start
 end
 ```
 
@@ -807,10 +795,9 @@ end
 ### 3. Use Templates for Dynamic Configuration
 
 ```ruby
-# ✅ Good - Use templates
-upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-  domain_name: "example.com",
-  port: 3000
+# ✅ Good - Use template resource
+template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb",
+  variables: { domain_name: "example.com", port: 3000 }
 
 # ❌ Avoid - Hardcoding values
 run "echo 'server_name example.com;' > /etc/nginx/nginx.conf"
@@ -820,12 +807,10 @@ run "echo 'server_name example.com;' > /etc/nginx/nginx.conf"
 
 ```ruby
 task :deploy do
-  # Validate configuration
-  run "nginx -t" || raise "Nginx configuration is invalid"
-
-  # Deploy
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
-  run "sudo systemctl reload nginx"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t", sudo: true  # run raises on invalid config
+  service "nginx", action: :reload
 end
 ```
 
@@ -1076,9 +1061,16 @@ Types: `feat`, `fix`, `docs`, `style`, `refactor`, `test`, `chore`
 
 ## 📚 Examples
 
-### Example Projects
+### Example Project
 
-Check out the [example project](https://github.com/kevin197011/kdeploy-app) for a complete deployment setup.
+The [sample/](sample/) directory in this repo provides a complete example with Nginx, Node Exporter, directory sync tasks, and Vagrant support for local testing:
+
+```bash
+cd sample
+vagrant up
+kdeploy execute deploy.rb deploy_web --dry-run  # Preview
+kdeploy execute deploy.rb deploy_web            # Execute
+```
 
 ### Common Deployment Scenarios
 
@@ -1119,12 +1111,21 @@ end
 
 ```ruby
 task :update_config, roles: :web do
-  upload_template "./config/app.yml.erb", "/etc/app/config.yml",
-    environment: "production",
-    database_url: ENV['DATABASE_URL'],
-    redis_url: ENV['REDIS_URL']
+  template "/etc/app/config.yml", source: "./config/app.yml.erb",
+    variables: { environment: "production", database_url: ENV['DATABASE_URL'], redis_url: ENV['REDIS_URL'] }
+  service "app", action: :reload
+end
+```
 
-  run "sudo systemctl reload app"
+#### Directory Sync Deployment
+
+```ruby
+task :deploy_app, roles: :web do
+  sync "./app", "/var/www/app",
+    ignore: [".git", "*.log", "node_modules", ".env.local", "*.tmp"],
+    delete: true
+  sync "./config", "/etc/app", exclude: ["*.example", "*.bak"]
+  service "app", action: :restart
 end
 ```
 
@@ -1137,7 +1138,7 @@ The gem is available as open source under the terms of the [MIT License](https:/
 - **GitHub**: https://github.com/kevin197011/kdeploy
 - **RubyGems**: https://rubygems.org/gems/kdeploy
 - **Issues**: https://github.com/kevin197011/kdeploy/issues
-- **Example Project**: https://github.com/kevin197011/kdeploy-app
+- **Sample**: [sample/](sample/) directory (includes Vagrant config)
 
 ## 🙏 Acknowledgments
 

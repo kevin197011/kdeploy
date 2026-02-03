@@ -232,10 +232,12 @@ module Kdeploy
       # 如果命令已经以 sudo 开头，不重复添加
       return command if command.strip.start_with?('sudo')
 
-      # 对于多行命令或包含 shell 控制结构的命令，使用 bash -c 包装
-      is_multiline = command.include?("\n") || command.match?(/\b(if|for|while|case|function)\b/)
+      # 多行、shell 控制结构、或包含 && / || / ; 的复合命令需整段在 sudo 下执行
+      needs_wrap = command.include?("\n") ||
+                   command.match?(/\b(if|for|while|case|function)\b/) ||
+                   command.match?(/\s(&&|\|\||;)\s/)
 
-      if is_multiline
+      if needs_wrap
         # 转义命令中的单引号，然后用 bash -c 执行
         escaped_command = command.gsub("'", "'\"'\"'")
         if @sudo_password

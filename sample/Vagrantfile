@@ -4,13 +4,16 @@
 # vi: set ft=ruby :
 
 Vagrant.configure('2') do |config|
-  # Use Ubuntu 22.04 for testing
-  config.vm.box = 'ubuntu/jammy64'
+  # Use Ubuntu 24.04 for testing
+  config.vm.box = 'bento/ubuntu-24.04'
+
+  # First boot can be slow (cloud-init, etc.); increase timeout
+  config.vm.boot_timeout = 600
 
   # Configure the web server VM
   config.vm.define 'web01' do |web|
     web.vm.hostname = 'web01'
-    web.vm.network 'private_network', ip: '10.0.0.1'
+    web.vm.network 'private_network', ip: '192.168.56.10'
 
     # Forward SSH port (explicitly set to avoid conflicts)
     web.vm.network 'forwarded_port', guest: 22, host: 2200, id: 'ssh', auto_correct: true
@@ -21,10 +24,10 @@ Vagrant.configure('2') do |config|
     # Forward node-exporter port for testing
     web.vm.network 'forwarded_port', guest: 9100, host: 9100
 
-    # Configure VirtualBox provider
+    # Configure VirtualBox provider (1024MB for Ubuntu 24.04 first boot)
     web.vm.provider 'virtualbox' do |vb|
       vb.name = 'kdeploy-web01'
-      vb.memory = '512'
+      vb.memory = '1024'
       vb.cpus = 1
     end
 
@@ -50,7 +53,7 @@ Vagrant.configure('2') do |config|
   # # Optional: Configure a second web server for testing
   # config.vm.define 'web02' do |web|
   #   web.vm.hostname = 'web02'
-  #   web.vm.network 'private_network', ip: '10.0.0.2'
+  #   web.vm.network 'private_network', ip: '192.168.56.11'
 
   #   # Forward SSH port (explicitly set to avoid conflicts)
   #   web.vm.network 'forwarded_port', guest: 22, host: 2201, id: 'ssh', auto_correct: true

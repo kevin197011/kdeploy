@@ -98,6 +98,12 @@ kdeploy version
 
 您应该看到版本信息和横幅。
 
+**若找不到 `kdeploy` 命令**：gem 的可执行目录可能不在 PATH 中。将以下内容加入 `~/.zshrc` 或 `~/.bashrc` 后执行 `source ~/.zshrc`：
+
+```bash
+export PATH="$(ruby -e 'puts Gem.bindir'):$PATH"
+```
+
 ### Shell 自动补全
 
 Kdeploy 在安装期间自动配置 shell 自动补全。如果需要，可以手动添加到 shell 配置中：
@@ -137,35 +143,30 @@ kdeploy init my-deployment
 
 ### 2. 配置主机和任务
 
-编辑 `deploy.rb`:
+编辑 `deploy.rb`（使用 Chef 风格资源 DSL）:
 
 ```ruby
 # 定义主机
 host "web01", user: "ubuntu", ip: "10.0.0.1", key: "~/.ssh/id_rsa"
 host "web02", user: "ubuntu", ip: "10.0.0.2", key: "~/.ssh/id_rsa"
-
-# 定义角色
 role :web, %w[web01 web02]
 
 # 定义部署任务
-task :deploy, roles: :web do
-  run <<~SHELL
-    sudo systemctl stop nginx
-    echo "正在部署应用程序..."
-  SHELL
-
-  upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-    domain_name: "example.com",
-    port: 3000
-
-  run "sudo systemctl start nginx"
+task :deploy_web, roles: :web do
+  package "nginx"
+  directory "/etc/nginx/conf.d"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb",
+    variables: { domain_name: "example.com", port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t", sudo: true
+  service "nginx", action: %i[enable restart]
 end
 ```
 
 ### 3. 运行部署
 
 ```bash
-kdeploy execute deploy.rb deploy
+kdeploy execute deploy.rb deploy_web
 ```
 
 ## 📖 使用指南
@@ -356,7 +357,7 @@ end
 
 ```ruby
 task :deploy_web, roles: :web do
-  run "sudo systemctl restart nginx"
+  service "nginx", action: :restart
 end
 ```
 
@@ -364,29 +365,22 @@ end
 
 ```ruby
 task :maintenance, on: %w[web01] do
-  run <<~SHELL
-    sudo systemctl stop nginx
-    sudo apt-get update && sudo apt-get upgrade -y
-    sudo systemctl start nginx
-  SHELL
+  service "nginx", action: :stop
+  run "apt-get update && apt-get upgrade -y", sudo: true
+  service "nginx", action: %i[start enable]
 end
 ```
 
 #### 多命令任务
 
 ```ruby
-task :deploy, roles: :web do
-  # 停止服务
-  run "sudo systemctl stop nginx"
-
-  # 上传配置
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
-
-  # 启动服务
-  run "sudo systemctl start nginx"
-
-  # 验证状态
-  run "sudo systemctl status nginx"
+task :deploy_web, roles: :web do
+  package "nginx"
+  directory "/etc/nginx/conf.d"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t", sudo: true
+  service "nginx", action: %i[enable restart]
 end
 ```
 
@@ -636,11 +630,8 @@ http {
 
 ```ruby
 task :deploy_config do
-  upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-    domain_name: "example.com",
-    port: 3000,
-    worker_processes: 4,
-    worker_connections: 2048
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb",
+    variables: { domain_name: "example.com", port: 3000, worker_processes: 4, worker_connections: 2048 }
 end
 ```
 
@@ -703,15 +694,11 @@ verify_host_key: true
 
 ```ruby
 task :deploy do
-  if ENV['ENVIRONMENT'] == 'production'
-    run "sudo systemctl stop nginx"
-  end
+  service "nginx", action: :stop if ENV['ENVIRONMENT'] == 'production'
 
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
+  file "/etc/nginx/nginx.conf", source: "./config/nginx.conf"
 
-  if ENV['ENVIRONMENT'] == 'production'
-    run "sudo systemctl start nginx"
-  end
+  service "nginx", action: :start if ENV['ENVIRONMENT'] == 'production'
 end
 ```
 
@@ -734,9 +721,10 @@ end
 
 ```ruby
 task :deploy do
-  run "sudo systemctl stop nginx" || raise "停止 nginx 失败"
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
-  run "sudo systemctl start nginx" || raise "启动 nginx 失败"
+  service "nginx", action: :stop
+  file "/etc/nginx/nginx.conf", source: "./config/nginx.conf"
+  run "nginx -t" || raise "Nginx 配置无效"
+  service "nginx", action: :start
 end
 ```
 
@@ -814,10 +802,9 @@ end
 ### 3. 使用模板进行动态配置
 
 ```ruby
-# ✅ 好的做法 - 使用模板
-upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-  domain_name: "example.com",
-  port: 3000
+# ✅ 好的做法 - 使用 template 资源
+template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb",
+  variables: { domain_name: "example.com", port: 3000 }
 
 # ❌ 避免 - 硬编码值
 run "echo 'server_name example.com;' > /etc/nginx/nginx.conf"
@@ -827,12 +814,10 @@ run "echo 'server_name example.com;' > /etc/nginx/nginx.conf"
 
 ```ruby
 task :deploy do
-  # 验证配置
-  run "nginx -t" || raise "Nginx 配置无效"
-
-  # 部署
-  upload "./config/nginx.conf", "/etc/nginx/nginx.conf"
-  run "sudo systemctl reload nginx"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t", sudo: true  # 配置无效时 run 会抛异常
+  service "nginx", action: :reload
 end
 ```
 
@@ -1070,7 +1055,14 @@ bundle exec rubocop -a
 
 ### 示例项目
 
-查看 [示例项目](https://github.com/kevin197011/kdeploy-app) 以获取完整的部署设置。
+本仓库的 [sample/](sample/) 目录提供完整示例，包含 Nginx、Node Exporter、目录同步等任务，支持 Vagrant 本地测试：
+
+```bash
+cd sample
+vagrant up
+kdeploy execute deploy.rb deploy_web --dry-run  # 预览
+kdeploy execute deploy.rb deploy_web            # 执行
+```
 
 ### 常见部署场景
 
@@ -1111,12 +1103,9 @@ end
 
 ```ruby
 task :update_config, roles: :web do
-  upload_template "./config/app.yml.erb", "/etc/app/config.yml",
-    environment: "production",
-    database_url: ENV['DATABASE_URL'],
-    redis_url: ENV['REDIS_URL']
-
-  run "sudo systemctl reload app"
+  template "/etc/app/config.yml", source: "./config/app.yml.erb",
+    variables: { environment: "production", database_url: ENV['DATABASE_URL'], redis_url: ENV['REDIS_URL'] }
+  service "app", action: :reload
 end
 ```
 
@@ -1124,16 +1113,11 @@ end
 
 ```ruby
 task :deploy_app, roles: :web do
-  # 同步应用程序代码，忽略开发文件
   sync "./app", "/var/www/app",
     ignore: [".git", "*.log", "node_modules", ".env.local", "*.tmp"],
     delete: true
-
-  # 同步配置文件
-  sync "./config", "/etc/app",
-    exclude: ["*.example", "*.bak"]
-
-  run "sudo systemctl restart app"
+  sync "./config", "/etc/app", exclude: ["*.example", "*.bak"]
+  service "app", action: :restart
 end
 ```
 
@@ -1146,7 +1130,7 @@ end
 - **GitHub**: https://github.com/kevin197011/kdeploy
 - **RubyGems**: https://rubygems.org/gems/kdeploy
 - **Issues**: https://github.com/kevin197011/kdeploy/issues
-- **示例项目**: https://github.com/kevin197011/kdeploy-app
+- **示例**: [sample/](sample/) 目录（含 Vagrant 配置）
 
 ## 🙏 致谢
 
