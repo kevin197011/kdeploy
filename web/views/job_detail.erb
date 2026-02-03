@@ -1,51 +1,54 @@
-<h2>Job #<%= @job.id %>: <%= @job.name %></h2>
-<div class="muted">Task file: <code><%= @job.task_file_path %></code></div>
-
-<div class="actions">
-  <a href="/jobs/<%= @job.id %>/edit">Edit</a>
+<div class="mb-6">
+  <a href="/jobs" class="text-sm text-slate-500 hover:text-slate-700">&larr; Jobs</a>
 </div>
 
-<h3>Run</h3>
-<form method="post" action="/jobs/<%= @job.id %>/runs">
-  <div class="row">
-    <div>
-      <label>Task name (optional)</label>
-      <input name="task_name" placeholder="e.g. deploy_web" />
-    </div>
-    <div>
-      <label>Limit hosts (optional)</label>
-      <input name="limit" placeholder="e.g. web01,web02" />
-    </div>
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6 mb-6">
+  <h1 class="text-2xl font-bold text-slate-900">Job #<%= @job.id %>: <%= @job.name %></h1>
+  <p class="mt-1 text-sm text-slate-500">Task file: <code class="px-2 py-0.5 bg-slate-100 rounded font-mono text-xs"><%= @job.task_file_path %></code></p>
+  <div class="mt-4">
+    <a href="/jobs/<%= @job.id %>/edit" class="inline-flex items-center px-3 py-1.5 border border-slate-300 text-sm font-medium rounded-lg text-slate-700 bg-white hover:bg-slate-50">Edit</a>
   </div>
+</div>
 
-  <div class="row" style="margin-top:12px;">
-    <div>
-      <label>Parallel</label>
-      <input name="parallel" placeholder="e.g. 5" />
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+  <h2 class="text-lg font-semibold text-slate-900 mb-4">Run</h2>
+  <form method="post" action="/jobs/<%= @job.id %>/runs" class="space-y-4">
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Task name (optional)</label>
+        <input name="task_name" placeholder="e.g. deploy_web" class="block w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Limit hosts (optional)</label>
+        <input name="limit" placeholder="e.g. web01,web02" class="block w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" />
+      </div>
     </div>
-    <div>
-      <label>Format</label>
-      <select name="format">
-        <option value="text">text</option>
-        <option value="json">json</option>
-      </select>
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Parallel</label>
+        <input name="parallel" placeholder="e.g. 5" class="block w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Format</label>
+        <select name="format" class="block w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm">
+          <option value="text">text</option>
+          <option value="json">json</option>
+        </select>
+      </div>
     </div>
-  </div>
-
-  <div class="row" style="margin-top:12px;">
-    <div>
-      <label>Retries</label>
-      <input name="retries" placeholder="e.g. 2" />
+    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Retries</label>
+        <input name="retries" placeholder="e.g. 2" class="block w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Retry delay (seconds)</label>
+        <input name="retry_delay" placeholder="e.g. 1" class="block w-full rounded-lg border border-slate-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-sm" />
+      </div>
     </div>
-    <div>
-      <label>Retry delay (seconds)</label>
-      <input name="retry_delay" placeholder="e.g. 1" />
+    <div class="flex items-center gap-3 pt-2">
+      <button type="submit" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">Run</button>
+      <a href="/runs" class="text-sm text-slate-600 hover:text-slate-900">View runs</a>
     </div>
-  </div>
-
-  <div class="actions">
-    <button type="submit">Run</button>
-    <a href="/runs">View runs</a>
-  </div>
-</form>
-
+  </form>
+</div>

@@ -33,6 +33,8 @@ bundle exec rackup -p 4567 web/config.ru
   - 请求头：`Authorization: Bearer <token>`
 - `JOB_CONSOLE_PERMITTED_HOSTS`: 允许的 Host 列表（逗号分隔）
   - 示例：`localhost,example.org,.example.org`
+- `JOB_CONSOLE_MAX_QUEUE`: 队列最大长度（默认 100）
+- `JOB_CONSOLE_MAX_RUNNING`: 最大并发执行数（默认 1，即单任务串行）
 
 ## API（示例）
 

@@ -1,26 +1,31 @@
-<h2>Jobs</h2>
-<div class="actions">
-  <a href="/jobs/new">New Job</a>
+<div class="flex items-center justify-between mb-6">
+  <h1 class="text-2xl font-bold text-slate-900">Jobs</h1>
+  <a href="/jobs/new" class="inline-flex items-center px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">New Job</a>
 </div>
 
-<table>
-  <thead>
-    <tr>
-      <th>ID</th>
-      <th>Name</th>
-      <th>Task file</th>
-      <th>Updated</th>
-    </tr>
-  </thead>
-  <tbody>
-    <% @jobs.each do |j| %>
+<div class="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+  <table class="min-w-full divide-y divide-slate-200">
+    <thead class="bg-slate-50">
       <tr>
-        <td><%= j.id %></td>
-        <td><a href="/jobs/<%= j.id %>"><%= j.name %></a></td>
-        <td class="muted"><code><%= j.task_file_path %></code></td>
-        <td class="muted"><%= j.updated_at %></td>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">ID</th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Name</th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Task file</th>
+        <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">Updated</th>
       </tr>
-    <% end %>
-  </tbody>
-</table>
-
+    </thead>
+    <tbody class="bg-white divide-y divide-slate-200">
+      <% @jobs.each do |j| %>
+        <tr class="hover:bg-slate-50/50">
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><%= j.id %></td>
+          <td class="px-6 py-4 whitespace-nowrap">
+            <a href="/jobs/<%= j.id %>" class="text-sm font-medium text-blue-600 hover:text-blue-800"><%= j.name %></a>
+          </td>
+          <td class="px-6 py-4 text-sm text-slate-600">
+            <code class="px-2 py-0.5 bg-slate-100 rounded text-slate-800 font-mono text-xs"><%= j.task_file_path %></code>
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap text-sm text-slate-500"><%= j.updated_at %></td>
+        </tr>
+      <% end %>
+    </tbody>
+  </table>
+</div>

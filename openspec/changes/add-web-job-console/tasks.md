@@ -15,12 +15,12 @@
 ## 4. UI
 - [x] 4.1 作业列表/新建/编辑页面
 - [x] 4.2 运行列表/详情页面（按 host 展示状态、步骤、耗时）
-- [ ] 4.3 一键重跑/取消（MVP：取消可先做 best-effort）
+- [x] 4.3 一键重跑/取消（MVP：取消可先做 best-effort）
 
 ## 5. Execution Integration
 - [x] 5.1 将 job/run 参数映射到 `kdeploy` 执行引擎（limit/parallel/retries/format）
 - [x] 5.2 输出落库（text/json），并提供下载接口
-- [ ] 5.3 资源限制与并发控制（MVP：全局上限）
+- [x] 5.3 资源限制与并发控制（MVP：全局上限）
 
 ## 6. Quality & CI
 - [x] 6.1 单元测试覆盖核心：状态机、API 参数校验、执行适配层（mock Executor）
