@@ -72,9 +72,7 @@ module Kdeploy
           raise "task file not found: #{task_file_path}" unless File.exist?(path)
 
           base_prefix = base_dir.end_with?(File::SEPARATOR) ? base_dir : "#{base_dir}#{File::SEPARATOR}"
-          unless path == base_dir || path.start_with?(base_prefix)
-            raise "task file outside base dir: #{path}"
-          end
+          raise "task file outside base dir: #{path}" unless path == base_dir || path.start_with?(base_prefix)
 
           path
         end

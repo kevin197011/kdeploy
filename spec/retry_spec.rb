@@ -58,9 +58,7 @@ RSpec.describe Kdeploy::Runner do
     calls = 0
     allow(executor).to receive(:execute) do
       calls += 1
-      if calls < 2
-        raise Kdeploy::SSHError.new('Command exited with status 1', nil, command: 'false', exit_status: 1)
-      end
+      raise Kdeploy::SSHError.new('Command exited with status 1', nil, command: 'false', exit_status: 1) if calls < 2
 
       { stdout: 'ok', stderr: '', command: 'echo ok', exit_status: 0 }
     end

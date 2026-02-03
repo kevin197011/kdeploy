@@ -370,9 +370,7 @@ module Kdeploy
         duration: step[:duration]
       }
 
-      if step[:output].is_a?(Hash) && step[:output].key?(:exit_status)
-        out[:exit_status] = step[:output][:exit_status]
-      end
+      out[:exit_status] = step[:output][:exit_status] if step[:output].is_a?(Hash) && step[:output].key?(:exit_status)
 
       out[:result] = step[:result] if step[:type] == :sync
 

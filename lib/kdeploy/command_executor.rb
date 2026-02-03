@@ -93,9 +93,7 @@ module Kdeploy
         attempts += 1
         yield
       rescue SSHError, SCPError, TemplateError => e
-        if e.is_a?(SSHError) && e.exit_status && !@retry_on_nonzero
-          raise
-        end
+        raise if e.is_a?(SSHError) && e.exit_status && !@retry_on_nonzero
         raise if attempts > (@retries + 1)
 
         sleep(@retry_delay) if @retry_delay.positive?
