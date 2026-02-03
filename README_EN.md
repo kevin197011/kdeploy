@@ -486,6 +486,67 @@ upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
 - `destination`: Remote file path
 - `variables`: Hash of variables for template rendering
 
+### Chef-Style Resource DSL
+
+Kdeploy provides a declarative resource DSL similar to Chef, which can replace or mix with low-level primitives (`run`, `upload`, `upload_template`).
+
+#### `package` - Install System Packages
+
+```ruby
+package "nginx"
+package "nginx", version: "1.18"
+package "nginx", platform: :yum  # CentOS/RHEL
+```
+
+Uses apt (Ubuntu/Debian) by default; `platform: :yum` generates yum commands.
+
+#### `service` - Manage System Services (systemd)
+
+```ruby
+service "nginx", action: [:enable, :start]
+service "nginx", action: :restart
+service "nginx", action: [:stop, :disable]
+```
+
+Supports `:start`, `:stop`, `:restart`, `:reload`, `:enable`, `:disable`.
+
+#### `template` - Deploy ERB Templates
+
+```ruby
+template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+# Or block syntax
+template "/etc/app.conf" do
+  source "./config/app.erb"
+  variables(domain: "example.com")
+end
+```
+
+#### `file` - Upload Local Files
+
+```ruby
+file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+```
+
+#### `directory` - Ensure Remote Directory Exists
+
+```ruby
+directory "/etc/nginx/conf.d"
+directory "/var/log/app", mode: "0755"
+```
+
+**Example: Deploy Nginx Using Resource DSL**
+
+```ruby
+task :deploy_nginx, roles: :web do
+  package "nginx"
+  directory "/etc/nginx/conf.d"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t"
+  service "nginx", action: [:enable, :restart]
+end
+```
+
 ### Template Support
 
 Kdeploy supports ERB (Embedded Ruby) templates for dynamic configuration generation.
@@ -883,7 +944,6 @@ Enable verbose output by checking the execution output. Kdeploy provides detaile
 - **Executor** (`executor.rb`): SSH/SCP execution engine
 - **Runner** (`runner.rb`): Concurrent task execution coordinator
 - **CommandExecutor** (`command_executor.rb`): Individual command execution
-- **CommandGrouper** (`command_grouper.rb`): Command grouping logic
 - **Template** (`template.rb`): ERB template rendering
 - **Output** (`output.rb`): Output formatting and display
 - **Configuration** (`configuration.rb`): Configuration management
@@ -893,10 +953,9 @@ Enable verbose output by checking the execution output. Kdeploy provides detaile
 
 1. **Parse Configuration**: Load and parse `deploy.rb`
 2. **Resolve Hosts**: Determine target hosts based on task definition
-3. **Group Commands**: Group commands by type for efficient execution
-4. **Execute Concurrently**: Run tasks in parallel across hosts
-5. **Collect Results**: Gather execution results and status
-6. **Display Output**: Format and display results to user
+3. **Execute Concurrently**: Run tasks in parallel across hosts, executing commands in order per host
+4. **Collect Results**: Gather execution results and status
+5. **Display Output**: Format and display results to user
 
 ### Concurrency Model
 
@@ -936,7 +995,6 @@ kdeploy/
 │       ├── executor.rb         # SSH/SCP executor
 │       ├── runner.rb           # Task runner
 │       ├── command_executor.rb # Command executor
-│       ├── command_grouper.rb  # Command grouper
 │       ├── template.rb         # Template handler
 │       ├── output.rb           # Output interface
 │       ├── configuration.rb    # Configuration

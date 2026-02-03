@@ -1,8 +1,27 @@
 # frozen_string_literal: true
 
 require 'set'
+require 'shellwords'
 
 module Kdeploy
+  # Helper for template resource block: captures source and variables
+  class TemplateOptions
+    def initialize
+      @source = nil
+      @variables = {}
+    end
+
+    def variables(val = nil)
+      @variables = val if val
+      @variables
+    end
+
+    def source(val = nil)
+      @source = val if val
+      @source
+    end
+  end
+
   # Domain-specific language for defining hosts, roles, and tasks
   module DSL
     def self.included(base)
@@ -154,6 +173,60 @@ module Kdeploy
       }
     end
 
+    # -------------------------------------------------------------------------
+    # Chef-style resource DSL (compiles to run/upload/upload_template)
+    # -------------------------------------------------------------------------
+
+    # 安装系统包。默认 apt 平台；支持 platform: :yum。
+    def package(name, version: nil, platform: :apt)
+      @kdeploy_commands ||= []
+      cmd = build_package_command(name, version, platform)
+      @kdeploy_commands << { type: :run, command: cmd, sudo: true }
+    end
+
+    # 管理系统服务（systemd）。action 支持 :start, :stop, :restart, :reload, :enable, :disable。
+    def service(name, action: :start)
+      @kdeploy_commands ||= []
+      actions = Array(action)
+      actions.each do |a|
+        cmd = "systemctl #{a} #{Shellwords.escape(name.to_s)}"
+        @kdeploy_commands << { type: :run, command: cmd, sudo: true }
+      end
+    end
+
+    # 部署 ERB 模板到远程路径。支持 block 或关键字参数。
+    def template(destination, source: nil, variables: nil, &block)
+      @kdeploy_commands ||= []
+      if block
+        opts = TemplateOptions.new
+        opts.instance_eval(&block)
+        src = opts.source || raise(ArgumentError, 'template requires source')
+        vars = opts.variables || {}
+      else
+        raise ArgumentError, 'template requires source' unless source
+
+        src = source
+        vars = variables || {}
+      end
+      upload_template(src, destination, vars)
+    end
+
+    # 上传本地文件到远程路径。
+    def file(destination, source:)
+      @kdeploy_commands ||= []
+      upload(source, destination)
+    end
+
+    # 确保远程目录存在。支持 mode 参数。
+    def directory(path, mode: nil)
+      @kdeploy_commands ||= []
+      cmd = "mkdir -p #{Shellwords.escape(path.to_s)}"
+      @kdeploy_commands << { type: :run, command: cmd, sudo: true }
+      return unless mode
+
+      @kdeploy_commands << { type: :run, command: "chmod #{mode} #{Shellwords.escape(path.to_s)}", sudo: true }
+    end
+
     def inventory(&block)
       instance_eval(&block) if block_given?
     end
@@ -186,6 +259,21 @@ module Kdeploy
         role_hosts.each do |host|
           hosts.add(host) if kdeploy_hosts.key?(host)
         end
+      end
+    end
+
+    def build_package_command(name, version, platform)
+      n = Shellwords.escape(name.to_s)
+      case platform.to_sym
+      when :yum, :rpm
+        if version
+          "yum install -y #{n}-#{Shellwords.escape(version.to_s)}"
+        else
+          "yum install -y #{n}"
+        end
+      else
+        base = "apt-get update && apt-get install -y #{n}"
+        version ? "#{base}=#{Shellwords.escape(version.to_s)}" : base
       end
     end
   end

@@ -41,10 +41,6 @@ module Kdeploy
       # If no hosts, return empty results immediately
       return @results if futures.empty?
 
-      # Show progress while waiting for tasks to complete
-      total = futures.length
-      completed = 0
-
       # Collect results from futures
       futures.each_with_index do |future, index|
         host_name = @host_names[index] # Get host name from the stored list
@@ -86,14 +82,6 @@ module Kdeploy
           # Ensure we always have a result for this host
           @results[host_name] ||= { status: :unknown, error: 'No result collected', output: [] }
         end
-
-        completed += 1
-        # Show progress for multiple hosts
-        next unless total > 1
-
-        pastel = @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
-        @output.write_line(pastel.dim("    [Progress: #{completed}/#{total} hosts completed]"))
-        @output.flush if @output.respond_to?(:flush)
       end
 
       @results
@@ -125,7 +113,7 @@ module Kdeploy
       result = { status: :success, output: [] }
 
       begin
-        execute_grouped_commands(task, command_executor, name, result, task_name)
+        execute_commands(task, command_executor, name, result, task_name)
       rescue StandardError => e
         # Keep any already collected step output for troubleshooting.
         result[:status] = :failed
@@ -136,43 +124,24 @@ module Kdeploy
       [name, result]
     end
 
-    def execute_grouped_commands(task, command_executor, name, result, task_name)
+    def execute_commands(task, command_executor, name, result, task_name)
       commands = task[:block].call
-      grouped_commands = CommandGrouper.group(commands)
 
-      grouped_commands.each_value do |command_group|
-        execute_command_group(command_group, command_executor, name, result, task_name)
-      end
-    end
-
-    def execute_command_group(command_group, command_executor, name, result, task_name)
-      first_cmd = command_group.first
-      task_desc = CommandGrouper.task_description(first_cmd)
-      show_task_header(task_desc)
-
-      command_group.each_with_index do |command, index|
-        # Show progress for multiple commands
-        if command_group.length > 1
-          pastel = @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
-          @output.write_line(pastel.dim("    [Step #{index + 1}/#{command_group.length}]"))
-        end
-
-        begin
-          step_result = execute_command(command_executor, command, name)
-          result[:output] << step_result
-        rescue StandardError => e
-          step = step_description(command)
-          result[:status] = :failed
-          result[:error] = "task=#{task_name} host=#{name} step=#{step} error=#{e.class}: #{e.message}"
-          result[:output] << {
-            type: command[:type],
-            command: step_command_string(command),
-            duration: 0.0,
-            error: "#{e.class}: #{e.message}",
-            output: error_output_for_step(e)
-          }
-          break
-        end
+      commands.each do |command|
+        step_result = execute_command(command_executor, command, name)
+        result[:output] << step_result
+      rescue StandardError => e
+        step = step_description(command)
+        result[:status] = :failed
+        result[:error] = "task=#{task_name} host=#{name} step=#{step} error=#{e.class}: #{e.message}"
+        result[:output] << {
+          type: command[:type],
+          command: step_command_string(command),
+          duration: 0.0,
+          error: "#{e.class}: #{e.message}",
+          output: error_output_for_step(e)
+        }
+        break
       end
     end
 
@@ -231,11 +200,6 @@ module Kdeploy
       else
         command[:type].to_s
       end
-    end
-
-    def show_task_header(task_desc)
-      # Don't show command header during execution - it will be shown in results
-      # This reduces noise during execution
     end
   end
 end

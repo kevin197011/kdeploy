@@ -46,6 +46,114 @@ RSpec.describe Kdeploy do
       expect(klass.get_task_hosts(:maintenance)).to match_array(%w[web01])
     end
 
+    it 'compiles package resource to run step' do
+      klass.task :install do
+        package 'nginx'
+      end
+      cmds = klass.tasks[:install][:block].call
+      expect(cmds.size).to eq(1)
+      expect(cmds[0][:type]).to eq(:run)
+      expect(cmds[0][:command]).to include('apt-get')
+      expect(cmds[0][:command]).to include('nginx')
+      expect(cmds[0][:sudo]).to eq(true)
+    end
+
+    it 'compiles package resource with version and platform' do
+      klass.task :install do
+        package 'nginx', version: '1.18', platform: :apt
+      end
+      cmds = klass.tasks[:install][:block].call
+      expect(cmds[0][:command]).to include('nginx=1.18')
+      klass.task :install_yum do
+        package 'nginx', platform: :yum
+      end
+      cmds_yum = klass.tasks[:install_yum][:block].call
+      expect(cmds_yum[0][:command]).to include('yum')
+    end
+
+    it 'compiles service resource to systemctl run steps' do
+      klass.task :svc do
+        service 'nginx', action: %i[enable start]
+      end
+      cmds = klass.tasks[:svc][:block].call
+      expect(cmds.size).to eq(2)
+      expect(cmds[0][:command]).to include('systemctl enable nginx')
+      expect(cmds[1][:command]).to include('systemctl start nginx')
+    end
+
+    it 'compiles template resource to upload_template step' do
+      klass.task :tmpl do
+        template '/etc/nginx/nginx.conf', source: './config/nginx.conf.erb', variables: { port: 3000 }
+      end
+      cmds = klass.tasks[:tmpl][:block].call
+      expect(cmds.size).to eq(1)
+      expect(cmds[0][:type]).to eq(:upload_template)
+      expect(cmds[0][:source]).to eq('./config/nginx.conf.erb')
+      expect(cmds[0][:destination]).to eq('/etc/nginx/nginx.conf')
+      expect(cmds[0][:variables]).to eq(port: 3000)
+    end
+
+    it 'compiles template resource with block syntax' do
+      klass.task :tmpl_block do
+        template '/etc/app.conf' do
+          source './config/app.erb'
+          variables(domain: 'example.com')
+        end
+      end
+      cmds = klass.tasks[:tmpl_block][:block].call
+      expect(cmds.size).to eq(1)
+      expect(cmds[0][:type]).to eq(:upload_template)
+      expect(cmds[0][:source]).to eq('./config/app.erb')
+      expect(cmds[0][:variables]).to eq(domain: 'example.com')
+    end
+
+    it 'compiles file resource to upload step' do
+      klass.task :f do
+        file '/etc/nginx/app.conf', source: './config/app.conf'
+      end
+      cmds = klass.tasks[:f][:block].call
+      expect(cmds.size).to eq(1)
+      expect(cmds[0][:type]).to eq(:upload)
+      expect(cmds[0][:source]).to eq('./config/app.conf')
+      expect(cmds[0][:destination]).to eq('/etc/nginx/app.conf')
+    end
+
+    it 'compiles directory resource to mkdir run step' do
+      klass.task :dir do
+        directory '/etc/nginx/conf.d'
+      end
+      cmds = klass.tasks[:dir][:block].call
+      expect(cmds.size).to eq(1)
+      expect(cmds[0][:type]).to eq(:run)
+      expect(cmds[0][:command]).to include('mkdir -p')
+    end
+
+    it 'compiles directory resource with mode to mkdir and chmod' do
+      klass.task :dir_mode do
+        directory '/var/log/app', mode: '0755'
+      end
+      cmds = klass.tasks[:dir_mode][:block].call
+      expect(cmds.size).to eq(2)
+      expect(cmds[0][:command]).to include('mkdir -p')
+      expect(cmds[1][:command]).to include('chmod 0755')
+    end
+
+    it 'mixes resource and primitive in order' do
+      klass.task :mixed do
+        package 'nginx'
+        run 'nginx -t'
+        service 'nginx', action: :restart
+      end
+      cmds = klass.tasks[:mixed][:block].call
+      expect(cmds.size).to eq(3)
+      expect(cmds[0][:type]).to eq(:run)
+      expect(cmds[0][:command]).to include('apt-get')
+      expect(cmds[1][:type]).to eq(:run)
+      expect(cmds[1][:command]).to eq('nginx -t')
+      expect(cmds[2][:type]).to eq(:run)
+      expect(cmds[2][:command]).to include('systemctl restart nginx')
+    end
+
     it 'includes tasks from other files and assigns roles by default' do
       require 'tmpdir'
       Dir.mktmpdir do |dir|

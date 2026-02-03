@@ -23,8 +23,8 @@ task :sync_app do
        ],
        delete: true        # Delete files on remote that don't exist locally
 
-  # Restart application service after sync
-  run 'sudo systemctl restart app || echo "Service restart skipped (service may not exist)"'
+  # Restart application service after sync (skip if service does not exist)
+  run 'systemctl restart app || true', sudo: true
 end
 
 # Sync configuration files directory
@@ -40,8 +40,8 @@ task :sync_config do
        ],
        delete: false       # Don't delete extra files (safer for configs)
 
-  # Reload application to apply new configuration
-  run 'sudo systemctl reload app || echo "Service reload skipped (service may not exist)"'
+  # Reload application to apply new configuration (skip if service does not exist)
+  run 'systemctl reload app || true', sudo: true
 end
 
 # Sync static assets (HTML, CSS, JS, images)
@@ -59,8 +59,8 @@ task :sync_static do
        delete: true        # Delete old static files
 
   # Set proper permissions for static files
-  run 'sudo chown -R www-data:www-data /var/www/static || echo "Permission change skipped"'
-  run 'sudo chmod -R 755 /var/www/static || echo "Permission change skipped"'
+  run 'chown -R www-data:www-data /var/www/static || true', sudo: true
+  run 'chmod -R 755 /var/www/static || true', sudo: true
 end
 
 # Full deployment with directory synchronization
@@ -82,30 +82,19 @@ task :deploy_full do
        delete: true
 
   # Step 4: Set permissions
-  run <<~SHELL
-    sudo chown -R www-data:www-data /var/www/app || true
-    sudo chmod -R 755 /var/www/app || true
-    sudo chown -R www-data:www-data /var/www/static || true
-    sudo chmod -R 755 /var/www/static || true
-  SHELL
+  run 'chown -R www-data:www-data /var/www/app /var/www/static || true', sudo: true
+  run 'chmod -R 755 /var/www/app /var/www/static || true', sudo: true
 
   # Step 5: Restart services
-  run <<~SHELL
-    sudo systemctl restart app || echo "App service restart skipped"
-    sudo systemctl reload nginx || echo "Nginx reload skipped"
-  SHELL
+  run 'systemctl restart app || true', sudo: true
+  service 'nginx', action: :reload
 
   # Step 6: Verify deployment
   run <<~SHELL
     echo "=== Deployment Verification ==="
-    echo "Application directory:"
     ls -la /var/www/app | head -10 || true
-    echo ""
-    echo "Configuration directory:"
     ls -la /etc/app | head -10 || true
-    echo ""
-    echo "Service status:"
-    sudo systemctl status app --no-pager || echo "App service not found"
+    systemctl status app --no-pager 2>/dev/null || true
   SHELL
 end
 
@@ -152,15 +141,8 @@ task :sync_advanced do
        delete: true
 
   # Post-sync operations
-  run <<~SHELL
-    # Set ownership
-    sudo chown -R app:app /opt/project || true
-
-    # Set permissions
-    sudo find /opt/project -type d -exec chmod 755 {} \\;
-    sudo find /opt/project -type f -exec chmod 644 {} \\;
-
-    # Make scripts executable
-    sudo find /opt/project -name "*.sh" -exec chmod +x {} \\;
-  SHELL
+  run 'chown -R app:app /opt/project || true', sudo: true
+  run 'find /opt/project -type d -exec chmod 755 {} \\;', sudo: true
+  run 'find /opt/project -type f -exec chmod 644 {} \\;', sudo: true
+  run 'find /opt/project -name "*.sh" -exec chmod +x {} \\;', sudo: true
 end

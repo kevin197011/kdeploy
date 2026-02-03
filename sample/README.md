@@ -15,6 +15,7 @@ This is a sample deployment project demonstrating Kdeploy's capabilities with Ng
 │   └── sync.rb        # Directory synchronization tasks
 ├── config/            # Configuration files
 │   ├── nginx.conf.erb # Nginx configuration template
+│   ├── node_exporter.service.erb # Node Exporter systemd unit template
 │   ├── app.conf       # Static configuration
 │   ├── app.yml        # Application configuration (will be synced)
 │   └── app.yml.example # Example config (excluded from sync)
@@ -70,12 +71,12 @@ worker_processes <%= worker_processes %>;
 server_name <%= domain_name %>;
 ```
 
-Variables are passed when uploading the template:
+Variables are passed when uploading the template (Chef-style resource DSL):
 
 ```ruby
-upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-  domain_name: "example.com",
-  worker_processes: 4
+template "/etc/nginx/nginx.conf",
+  source: "./config/nginx.conf.erb",
+  variables: { domain_name: "example.com", worker_processes: 4 }
 ```
 
 ## 🚀 Quick Start with Vagrant

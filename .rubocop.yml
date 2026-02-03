@@ -1,13 +1,10 @@
 AllCops:
   NewCops: enable
 
-# 该项目包含较多 DSL/CLI 文件，方法长度与复杂度在短期内不适合强行收敛。
-# 先以“可持续的质量基线”为主：保留风格/安全/正确性类 cop，关闭 Metrics 族。
-Metrics:
-  Enabled: false
-
 Style/Documentation:
-  Enabled: false
+  Exclude:
+    - web/**/*
+    - spec/**/*
 
 Gemspec/AddRuntimeDependency:
   Enabled: true
@@ -123,6 +120,23 @@ Lint/UselessRescue:
   Enabled: true
 Lint/UselessRuby2Keywords:
   Enabled: true
+# 本项目禁用 Metrics 族（参见 project.md），保留风格/正确性检查
+Metrics/AbcSize:
+  Enabled: false
+Metrics/BlockLength:
+  Enabled: false
+Metrics/ClassLength:
+  Enabled: false
+Metrics/CyclomaticComplexity:
+  Enabled: false
+Metrics/MethodLength:
+  Enabled: false
+Metrics/ModuleLength:
+  Enabled: false
+Metrics/ParameterLists:
+  Enabled: false
+Metrics/PerceivedComplexity:
+  Enabled: false
 Metrics/CollectionLiteralLength:
   Enabled: true
 Naming/BlockForwarding:

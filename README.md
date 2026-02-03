@@ -529,6 +529,67 @@ sync "./config", "/etc/app",
 - 同步静态资源文件
 - 保持本地和远程目录结构一致
 
+### Chef 风格资源 DSL
+
+Kdeploy 提供类似 Chef 的声明式资源 DSL，可替代或与底层原语（`run`、`upload`、`upload_template`）混用。
+
+#### `package` - 安装系统包
+
+```ruby
+package "nginx"
+package "nginx", version: "1.18"
+package "nginx", platform: :yum  # CentOS/RHEL
+```
+
+默认使用 apt（Ubuntu/Debian）；`platform: :yum` 生成 yum 命令。
+
+#### `service` - 管理系统服务（systemd）
+
+```ruby
+service "nginx", action: [:enable, :start]
+service "nginx", action: :restart
+service "nginx", action: [:stop, :disable]
+```
+
+支持 `:start`、`:stop`、`:restart`、`:reload`、`:enable`、`:disable`。
+
+#### `template` - 部署 ERB 模板
+
+```ruby
+template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+# 或 block 语法
+template "/etc/app.conf" do
+  source "./config/app.erb"
+  variables(domain: "example.com")
+end
+```
+
+#### `file` - 上传本地文件
+
+```ruby
+file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+```
+
+#### `directory` - 确保远程目录存在
+
+```ruby
+directory "/etc/nginx/conf.d"
+directory "/var/log/app", mode: "0755"
+```
+
+**示例：使用资源 DSL 部署 Nginx**
+
+```ruby
+task :deploy_nginx, roles: :web do
+  package "nginx"
+  directory "/etc/nginx/conf.d"
+  template "/etc/nginx/nginx.conf", source: "./config/nginx.conf.erb", variables: { port: 3000 }
+  file "/etc/nginx/conf.d/app.conf", source: "./config/app.conf"
+  run "nginx -t"
+  service "nginx", action: [:enable, :restart]
+end
+```
+
 ### 模板支持
 
 Kdeploy 支持 ERB（嵌入式 Ruby）模板，用于动态配置生成。
@@ -875,7 +936,6 @@ kdeploy execute deploy.rb deploy --parallel 3
 - **Executor** (`executor.rb`): SSH/SCP 执行引擎
 - **Runner** (`runner.rb`): 并发任务执行协调器
 - **CommandExecutor** (`command_executor.rb`): 单个命令执行
-- **CommandGrouper** (`command_grouper.rb`): 命令分组逻辑
 - **Template** (`template.rb`): ERB 模板渲染
 - **Output** (`output.rb`): 输出格式化和显示
 - **Configuration** (`configuration.rb`): 配置管理
@@ -885,10 +945,9 @@ kdeploy execute deploy.rb deploy --parallel 3
 
 1. **解析配置**: 加载并解析 `deploy.rb`
 2. **解析主机**: 根据任务定义确定目标主机
-3. **分组命令**: 按类型分组命令以提高执行效率
-4. **并发执行**: 跨主机并行运行任务
-5. **收集结果**: 收集执行结果和状态
-6. **显示输出**: 格式化并向用户显示结果
+3. **并发执行**: 跨主机并行运行任务，按序执行每台主机上的命令
+4. **收集结果**: 收集执行结果和状态
+5. **显示输出**: 格式化并向用户显示结果
 
 ### 并发模型
 
@@ -928,7 +987,6 @@ kdeploy/
 │       ├── executor.rb         # SSH/SCP 执行器
 │       ├── runner.rb           # 任务运行器
 │       ├── command_executor.rb # 命令执行器
-│       ├── command_grouper.rb  # 命令分组器
 │       ├── template.rb         # 模板处理器
 │       ├── output.rb           # 输出接口
 │       ├── configuration.rb    # 配置

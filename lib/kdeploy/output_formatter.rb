@@ -39,34 +39,20 @@ module Kdeploy
       Array(result[:output]).sum { |step| step[:duration].to_f }
     end
 
-    def format_upload_steps(steps, shown)
-      format_file_steps(steps, shown, :upload, @pastel.green('  === Upload ==='), 'upload: ')
+    def format_upload_steps(steps, _shown = nil)
+      format_file_steps(steps, :upload, 'upload: ')
     end
 
-    def format_template_steps(steps, shown)
-      format_file_steps(steps, shown, :upload_template, @pastel.yellow('  === Template ==='), 'upload_template: ')
+    def format_template_steps(steps, _shown = nil)
+      format_file_steps(steps, :upload_template, 'upload_template: ')
     end
 
-    def format_sync_steps(steps, shown)
-      output = []
-      steps.each do |step|
-        next if step_already_shown?(step, :sync, shown)
-
-        mark_step_as_shown(step, :sync, shown)
-        output << format_sync_step(step)
-      end
-      output
+    def format_sync_steps(steps, _shown = nil)
+      steps.map { |step| format_sync_step(step) }
     end
 
-    def format_file_steps(steps, shown, type, _header, prefix)
-      output = []
-      steps.each do |step|
-        next if step_already_shown?(step, type, shown)
-
-        mark_step_as_shown(step, type, shown)
-        output << format_file_step(step, type, prefix)
-      end
-      output
+    def format_file_steps(steps, type, prefix)
+      steps.map { |step| format_file_step(step, type, prefix) }
     end
 
     def format_file_step(step, type, prefix)
@@ -80,15 +66,8 @@ module Kdeploy
       @pastel.dim("    #{icon} ") + @pastel.send(color_method, display_path) + duration_str + " #{status_str}"
     end
 
-    def format_run_steps(steps, shown)
-      output = []
-      steps.each do |step|
-        next if step_already_shown?(step, :run, shown)
-
-        mark_step_as_shown(step, :run, shown)
-        output.concat(format_single_run_step(step))
-      end
-      output
+    def format_run_steps(steps, _shown = nil)
+      steps.flat_map { |step| format_single_run_step(step) }
     end
 
     def format_single_run_step(step)
@@ -266,16 +245,6 @@ module Kdeploy
         result << @pastel.yellow("        #{stripped}") unless stripped.empty?
       end
       result
-    end
-
-    def step_already_shown?(step, type, shown)
-      key = [step[:command], type].hash
-      shown[key]
-    end
-
-    def mark_step_as_shown(step, type, shown)
-      key = [step[:command], type].hash
-      shown[key] = true
     end
 
     def format_sync_step(step)

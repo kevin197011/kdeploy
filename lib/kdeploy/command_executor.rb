@@ -11,10 +11,9 @@ module Kdeploy
       @retry_delay = retry_delay.to_f
     end
 
-    def execute_run(command, host_name)
+    def execute_run(command, _host_name)
       cmd = command[:command]
       use_sudo = command[:sudo]
-      show_command_header(host_name, :run, cmd)
 
       result, duration = measure_time do
         with_retries { @executor.execute(cmd, use_sudo: use_sudo) }
@@ -23,8 +22,7 @@ module Kdeploy
       { command: cmd, output: result, duration: duration, type: :run }
     end
 
-    def execute_upload(command, host_name)
-      show_command_header(host_name, :upload, "#{command[:source]} -> #{command[:destination]}")
+    def execute_upload(command, _host_name)
       _result, duration = measure_time do
         with_retries { @executor.upload(command[:source], command[:destination]) }
       end
@@ -35,8 +33,7 @@ module Kdeploy
       }
     end
 
-    def execute_upload_template(command, host_name)
-      show_command_header(host_name, :upload_template, "#{command[:source]} -> #{command[:destination]}")
+    def execute_upload_template(command, _host_name)
       _result, duration = measure_time do
         with_retries do
           @executor.upload_template(command[:source], command[:destination], command[:variables])
@@ -49,11 +46,9 @@ module Kdeploy
       }
     end
 
-    def execute_sync(command, host_name)
+    def execute_sync(command, _host_name)
       source = command[:source]
       destination = command[:destination]
-      description = build_sync_description(source, destination, command[:delete])
-      show_command_header(host_name, :sync, description)
 
       result, duration = measure_time do
         with_retries do
@@ -71,12 +66,6 @@ module Kdeploy
     end
 
     private
-
-    def build_sync_description(source, destination, delete)
-      desc = "sync: #{source} -> #{destination}"
-      desc += " (delete: #{delete})" if delete
-      desc
-    end
 
     def build_sync_result(source, destination, result, duration)
       {
@@ -107,33 +96,6 @@ module Kdeploy
 
         sleep(@retry_delay) if @retry_delay.positive?
         retry
-      end
-    end
-
-    def show_command_header(host_name, type, description)
-      # Don't show command header during execution - it will be shown in results
-      # This reduces noise during execution
-    end
-
-    def pastel_instance
-      @output.respond_to?(:pastel) ? @output.pastel : Pastel.new
-    end
-
-    def format_command_by_type(type, description, pastel)
-      case type
-      when :run
-        format_run_command(description, pastel)
-      when :upload
-        @output.write_line(pastel.green("  [upload] #{description}"))
-      when :upload_template
-        @output.write_line(pastel.yellow("  [template] #{description}"))
-      end
-    end
-
-    def format_run_command(description, pastel)
-      @output.write_line(pastel.cyan("  [run]    #{description.lines.first.strip}"))
-      description.lines[1..].each do |line|
-        @output.write_line("           > #{line.strip}") unless line.strip.empty?
       end
     end
   end

@@ -39,27 +39,21 @@ module Kdeploy
         role :web, %w[web01 web02]
         role :db, %w[db01]
 
-        # Define deployment task for web servers
+        # Define deployment task for web servers (Chef-style resource DSL)
         task :deploy_web, roles: :web do
-          # Example: Using sudo option for specific command
-          # run "systemctl stop nginx", sudo: true
-          run <<~SHELL
-            sudo systemctl stop nginx
-            echo "Deploying..."
-          SHELL
-
-          upload_template './config/nginx.conf.erb', '/etc/nginx/nginx.conf',
-            domain_name: 'example.com',
-            port: 3000,
-            worker_processes: 4,
-            worker_connections: 2048
-
-          upload './config/app.conf', '/etc/nginx/conf.d/app.conf'
-
-          run <<~SHELL
-            sudo systemctl start nginx
-            sudo systemctl status nginx
-          SHELL
+          package 'nginx'
+          directory '/etc/nginx/conf.d'
+          template '/etc/nginx/nginx.conf',
+            source: './config/nginx.conf.erb',
+            variables: {
+              domain_name: 'example.com',
+              port: 3000,
+              worker_processes: 4,
+              worker_connections: 2048
+            }
+          file '/etc/nginx/conf.d/app.conf', source: './config/app.conf'
+          run 'nginx -t', sudo: true
+          service 'nginx', action: %i[enable restart]
         end
 
         # Define backup task for database servers
@@ -71,13 +65,11 @@ module Kdeploy
           SHELL
         end
 
-        # Define task for specific hosts
+        # Define task for specific hosts (resource DSL example)
         task :maintenance, on: %w[web01] do
-          run <<~SHELL
-            sudo systemctl stop nginx
-            sudo apt-get update && sudo apt-get upgrade -y
-            sudo systemctl start nginx
-          SHELL
+          service 'nginx', action: :stop
+          run 'apt-get update && apt-get upgrade -y', sudo: true
+          service 'nginx', action: %i[start enable]
         end
 
         # Define task for all hosts
@@ -199,12 +191,12 @@ module Kdeploy
         server_name <%= domain_name %>;
         ```
 
-        Variables are passed when uploading the template:
+        Variables are passed when uploading the template (Chef-style resource DSL):
 
         ```ruby
-        upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
-          domain_name: "example.com",
-          worker_processes: 4
+        template "/etc/nginx/nginx.conf",
+          source: "./config/nginx.conf.erb",
+          variables: { domain_name: "example.com", worker_processes: 4 }
         ```
 
         ## 🔐 Using Sudo

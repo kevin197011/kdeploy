@@ -1,107 +1,65 @@
 # frozen_string_literal: true
 
 # ============================================================================
-# Nginx Deployment Tasks
+# Nginx Deployment Tasks (Chef-style resource DSL)
 # ============================================================================
 
 # Install nginx on web servers
 task :install_nginx do
-  run <<~SHELL
-    # Check if nginx is already installed
-    if command -v nginx &> /dev/null; then
-      echo "nginx is already installed"
-      nginx -v
-    else
-      # Update package list
-      sudo apt-get update
-
-      # Install nginx
-      sudo apt-get install -y nginx
-
-      # Start and enable nginx
-      sudo systemctl start nginx
-      sudo systemctl enable nginx
-
-      echo "nginx installed successfully"
-    fi
-  SHELL
+  package 'nginx'
+  service 'nginx', action: %i[enable start]
 end
 
 # Configure nginx
 task :configure_nginx do
-  # Backup existing config
-  run 'sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup || true'
-
-  # Upload main nginx configuration template
-  upload_template './config/nginx.conf.erb', '/etc/nginx/nginx.conf',
-                  domain_name: 'example.com',
-                  port: 3000,
-                  worker_processes: 4,
-                  worker_connections: 2048
-
-  # Upload app configuration
-  run 'sudo mkdir -p /etc/nginx/conf.d'
-  upload './config/app.conf', '/etc/nginx/conf.d/app.conf'
-
-  # Test nginx configuration
-  run 'sudo nginx -t'
-
-  # Reload nginx
-  run 'sudo systemctl reload nginx'
+  run 'cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup || true', sudo: true
+  directory '/etc/nginx/conf.d'
+  template '/etc/nginx/nginx.conf',
+           source: './config/nginx.conf.erb',
+           variables: {
+             domain_name: 'example.com',
+             port: 3000,
+             worker_processes: 4,
+             worker_connections: 2048
+           }
+  file '/etc/nginx/conf.d/app.conf', source: './config/app.conf'
+  run 'nginx -t', sudo: true
+  service 'nginx', action: :reload
 end
 
-# Deploy web application (includes install and configure)
+# Deploy web application (install + configure + start)
 task :deploy_web do
-  # Install nginx if not installed
-  run <<~SHELL
-    if ! command -v nginx &> /dev/null; then
-      sudo apt-get update
-      sudo apt-get install -y nginx
-      sudo systemctl start nginx
-      sudo systemctl enable nginx
-    fi
-  SHELL
-
-  # Stop nginx for configuration
-  run 'sudo systemctl stop nginx || true'
-
-  # Upload configurations
-  run 'sudo cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup || true'
-
-  upload_template './config/nginx.conf.erb', '/etc/nginx/nginx.conf',
-                  domain_name: 'example.com',
-                  port: 3000,
-                  worker_processes: 4,
-                  worker_connections: 2048
-
-  run 'sudo mkdir -p /etc/nginx/conf.d'
-  upload './config/app.conf', '/etc/nginx/conf.d/app.conf'
-
-  # Test and start nginx
-  run <<~SHELL
-    sudo nginx -t
-    sudo systemctl start nginx
-    sudo systemctl status nginx --no-pager
-  SHELL
+  package 'nginx'
+  directory '/etc/nginx/conf.d'
+  run 'cp /etc/nginx/nginx.conf /etc/nginx/nginx.conf.backup || true', sudo: true
+  template '/etc/nginx/nginx.conf',
+           source: './config/nginx.conf.erb',
+           variables: {
+             domain_name: 'example.com',
+             port: 3000,
+             worker_processes: 4,
+             worker_connections: 2048
+           }
+  file '/etc/nginx/conf.d/app.conf', source: './config/app.conf'
+  run 'nginx -t', sudo: true
+  service 'nginx', action: %i[enable restart]
 end
 
 # Start nginx service
 task :start_nginx do
-  run 'sudo systemctl start nginx'
-  run 'sudo systemctl status nginx --no-pager'
+  service 'nginx', action: :start
 end
 
 # Stop nginx service
 task :stop_nginx do
-  run 'sudo systemctl stop nginx'
-  run "echo 'nginx stopped'"
+  service 'nginx', action: :stop
 end
 
 # Restart nginx service
 task :restart_nginx do
-  run 'sudo systemctl restart nginx'
+  service 'nginx', action: :restart
   run 'sleep 2'
-  run 'sudo systemctl status nginx --no-pager'
+  run 'systemctl status nginx --no-pager', sudo: true
 end
 
 # Check nginx status
