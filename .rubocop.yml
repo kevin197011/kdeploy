@@ -120,7 +120,7 @@ Lint/UselessRescue:
   Enabled: true
 Lint/UselessRuby2Keywords:
   Enabled: true
-# 本项目禁用 Metrics 族（参见 project.md），保留风格/正确性检查
+# Metrics cops are disabled in this project (see project.md); keep style/correctness checks.
 Metrics/AbcSize:
   Enabled: false
 Metrics/BlockLength:

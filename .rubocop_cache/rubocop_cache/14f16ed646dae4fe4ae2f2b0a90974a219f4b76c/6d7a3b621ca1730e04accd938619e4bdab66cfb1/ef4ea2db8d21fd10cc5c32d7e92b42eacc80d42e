@@ -1,0 +1,1 @@
+[{"severity":"convention","location":{"begin_pos":1346,"end_pos":1349},"message":"Style/MapToSet: Pass a block to `to_set` instead of calling `map.to_set`.","cop_name":"Style/MapToSet","status":"uncorrected"}]

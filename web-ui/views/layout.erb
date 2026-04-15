@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Kdeploy Job Console</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: { sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'sans-serif'] }
+          }
+        }
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  </head>
+  <body class="bg-slate-50 text-slate-800 antialiased min-h-screen">
+    <nav class="bg-white border-b border-slate-200 shadow-sm">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="flex justify-between h-14">
+          <div class="flex items-center gap-3">
+            <a href="/editor" class="flex items-center gap-2">
+              <img src="/logo.svg" alt="Kdeploy" class="w-8 h-8" />
+              <span class="text-slate-700 font-semibold hover:text-slate-900">Kdeploy</span>
+            </a>
+          </div>
+          <% if session[:ui_user] %>
+            <form method="post" action="/logout" class="flex items-center">
+              <button type="submit" class="text-sm text-slate-600 hover:text-slate-900">Logout</button>
+            </form>
+          <% end %>
+        </div>
+      </div>
+    </nav>
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <%= yield %>
+    </main>
+    <footer class="text-center py-6 text-sm text-slate-400">
+      kk驱动开发
+    </footer>
+  </body>
+</html>

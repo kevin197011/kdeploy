@@ -1,0 +1,477 @@
+# frozen_string_literal: true
+
+require 'thor'
+require 'json'
+require 'yaml'
+require 'pastel'
+require 'tty-table'
+require 'tty-box'
+require 'fileutils'
+
+module Kdeploy
+  # Command-line interface for Kdeploy
+  class CLI < Thor
+    extend DSL
+
+    def self.exit_on_failure?
+      true
+    end
+
+    map %w[--help -h] => :help
+    map %w[--version -v] => :version
+
+    desc 'version', 'Show version information'
+    def version
+      puts Kdeploy::Banner.show_version
+    end
+
+    desc 'help [COMMAND]', 'Show help information'
+    def help(command = nil)
+      if command
+        super
+      else
+        show_general_help
+      end
+    end
+
+    desc 'init [DIR]', 'Initialize a new deployment project'
+    def init(dir = '.')
+      initializer = Initializer.new(dir)
+      initializer.run
+    rescue StandardError => e
+      puts Kdeploy::Banner.show_error(e.message)
+      exit 1
+    end
+
+    desc 'execute TASK_FILE [TASK]', 'Execute deployment tasks from file'
+    method_option :limit, type: :string, desc: 'Limit to specific hosts (comma-separated)'
+    method_option :parallel, type: :numeric, desc: 'Number of parallel executions'
+    method_option :dry_run, type: :boolean, desc: 'Show what would be done'
+    method_option :debug, type: :boolean, desc: 'Show detailed command output (stdout/stderr)'
+    method_option :no_banner, type: :boolean, desc: 'Do not print banner'
+    method_option :format, type: :string, default: 'text', desc: 'Output format (text|json)'
+    method_option :retries, type: :numeric, desc: 'Retry count for network operations (default: 0)'
+    method_option :retry_delay, type: :numeric, desc: 'Retry delay seconds (default: 1)'
+    method_option :retry_on_nonzero, type: :boolean, desc: 'Retry commands on nonzero exit status (default: false)'
+    method_option :timeout, type: :numeric, desc: 'Per-host execution timeout seconds (default: none)'
+    method_option :step_timeout, type: :numeric, desc: 'Per-step execution timeout seconds (default: none)'
+    method_option :retry_policy, type: :string, desc: 'Retry policy JSON to override config file'
+    method_option :retry_policy_file, type: :string, desc: 'Retry policy JSON file to override config file'
+    def execute(task_file, task_name = nil)
+      load_config_file
+      show_banner_once
+      @task_file_dir = File.dirname(File.expand_path(task_file))
+      load_task_file(task_file)
+
+      tasks_to_run = determine_tasks(task_name)
+      all_results = execute_tasks(tasks_to_run)
+
+      # Exit non-zero if any executed host failed.
+      exit 1 if any_failed?(all_results)
+    rescue StandardError => e
+      puts Kdeploy::Banner.show_error(e.message)
+      exit 1
+    end
+
+    private
+
+    def load_config_file
+      Configuration.load_from_file
+    end
+
+    def load_task_file(file)
+      validate_task_file(file)
+      # Use module_eval with top-level binding to keep heredoc compatible
+      self.class.module_eval(File.read(file), file)
+    rescue StandardError => e
+      raise FileNotFoundError, file if e.message.include?('not found')
+
+      raise
+    end
+
+    def validate_task_file(file)
+      return if File.exist?(file)
+
+      puts Kdeploy::Banner.show_error("Task file not found: #{file}")
+      exit 1
+    end
+
+    def show_general_help
+      formatter = HelpFormatter.new
+      puts Kdeploy::Banner.show
+      puts formatter.format_help
+    end
+
+    def filter_hosts(limit, task_hosts)
+      hosts = self.class.kdeploy_hosts.slice(*task_hosts)
+      return hosts unless limit
+
+      host_names = limit.split(',').map(&:strip)
+      hosts.slice(*host_names)
+    end
+
+    def print_dry_run(hosts, task_name)
+      formatter = OutputFormatter.new
+      # Banner already shown by show_banner_once, don't show again
+      puts formatter.format_dry_run_header
+      puts
+
+      hosts.each do |name, config|
+        print_dry_run_for_host(name, config, task_name, formatter)
+      end
+    end
+
+    def print_dry_run_for_host(name, config, task_name, formatter)
+      commands = self.class.kdeploy_tasks[task_name][:block].call
+      output = commands.map { |cmd| formatter.format_command_for_dry_run(cmd) }.join("\n")
+      title = "#{name} (#{config[:ip]})"
+      puts formatter.format_dry_run_box(title, output)
+      puts
+    end
+
+    def print_results(results, task_name, show_summary: false, debug: false)
+      formatter = OutputFormatter.new(debug: debug)
+      puts formatter.format_task_header(task_name)
+
+      if results.empty?
+        puts Kdeploy::Banner.show_error("No hosts executed for task: #{task_name}")
+        puts 'This usually means no hosts matched the task configuration.'
+        return
+      end
+
+      results.each do |host, result|
+        puts formatter.format_host_status(host, result[:status])
+        print_host_result(host, result, formatter)
+      end
+
+      # Only show summary if explicitly requested (for single task execution)
+      print_summary(results, formatter) if show_summary
+    end
+
+    def print_host_result(host, result, formatter)
+      if %i[success changed].include?(result[:status])
+        print_success_result(host, result, formatter)
+      else
+        print_failure_result(host, result, formatter)
+      end
+
+      duration = formatter.calculate_host_duration(result)
+      puts "#{formatter.host_prefix(host)}#{formatter.format_host_completed(duration)}" if duration.positive?
+    end
+
+    def print_success_result(host, result, formatter)
+      shown = {}
+      grouped = group_output_by_type(result[:output])
+
+      grouped.each do |type, steps|
+        output_lines = format_steps_by_type(type, steps, shown, formatter)
+        output_lines.each { |line| puts "#{formatter.host_prefix(host)}#{line}" }
+      end
+    end
+
+    def group_output_by_type(output)
+      output.group_by { |step| step[:type] || :run }
+    end
+
+    def format_steps_by_type(type, steps, shown, formatter)
+      case type
+      when :upload
+        formatter.format_upload_steps(steps, shown)
+      when :upload_template
+        formatter.format_template_steps(steps, shown)
+      when :sync
+        formatter.format_sync_steps(steps, shown)
+      when :run
+        formatter.format_run_steps(steps, shown)
+      else
+        []
+      end
+    end
+
+    def print_failure_result(host, result, formatter)
+      error_message = extract_error_message(result)
+      puts "#{formatter.host_prefix(host)}#{formatter.format_error(error_message)}"
+
+      # On failure, show steps that were executed (and any captured output)
+      # to make troubleshooting easier, even if --debug is not enabled.
+      return unless result[:output].is_a?(Array) && result[:output].any?
+
+      debug_formatter = OutputFormatter.new(debug: true)
+      shown = {}
+      grouped = group_output_by_type(result[:output])
+      grouped.each do |type, steps|
+        output_lines = format_steps_by_type(type, steps, shown, debug_formatter)
+        output_lines.each { |line| puts "#{debug_formatter.host_prefix(host)}#{line}" }
+      end
+    end
+
+    def print_summary(results, formatter)
+      puts formatter.format_summary_header
+      max_host_len = results.keys.map(&:length).max || 16
+
+      results.keys.sort.each do |host|
+        result = results[host]
+        puts formatter.format_summary_line(host, result, max_host_len)
+      end
+    end
+
+    def show_banner_once
+      @banner_printed ||= false
+      return if @banner_printed
+      return if options[:no_banner]
+
+      puts Kdeploy::Banner.show
+      @banner_printed = true
+    end
+
+    def determine_tasks(task_name)
+      task_name ? [task_name.to_sym] : self.class.kdeploy_tasks.keys
+    end
+
+    def execute_tasks(tasks_to_run)
+      all_results = {}
+
+      tasks_to_run.each do |task|
+        task_results = execute_single_task(task)
+        # Collect results for final summary
+        all_results[task] = task_results if task_results
+
+        # Stop executing remaining tasks once any host failed for this task.
+        break if task_failed?(task_results)
+      end
+
+      # Show combined summary at the end for all tasks
+      print_all_tasks_summary(all_results) unless all_results.empty? || options[:format] == 'json'
+
+      all_results
+    end
+
+    def execute_single_task(task)
+      task_hosts = self.class.get_task_hosts(task)
+      hosts = filter_hosts(options[:limit], task_hosts)
+
+      if hosts.empty?
+        puts Kdeploy::Banner.show_error("No hosts found for task: #{task}")
+        return nil
+      end
+
+      if options[:dry_run]
+        if options[:format] == 'json'
+          print_dry_run_json(hosts, task)
+        else
+          print_dry_run(hosts, task)
+        end
+        return nil
+      end
+
+      run_task(hosts, task)
+    end
+
+    def run_task(hosts, task)
+      output = ConsoleOutput.new
+      parallel_count = options[:parallel] || Configuration.default_parallel
+      debug_mode = options[:debug] || false
+      retries = options[:retries].nil? ? Configuration.default_retries : options[:retries]
+      retry_delay = options[:retry_delay].nil? ? Configuration.default_retry_delay : options[:retry_delay]
+      retry_on_nonzero =
+        options[:retry_on_nonzero].nil? ? Configuration.default_retry_on_nonzero : options[:retry_on_nonzero]
+      host_timeout = options[:timeout].nil? ? Configuration.default_host_timeout : options[:timeout]
+      step_timeout = options[:step_timeout].nil? ? Configuration.default_step_timeout : options[:step_timeout]
+      retry_policy = resolve_retry_policy
+      base_dir = @task_file_dir
+      runner = Runner.new(
+        hosts, self.class.kdeploy_tasks,
+        parallel: parallel_count,
+        output: output,
+        debug: debug_mode,
+        base_dir: base_dir,
+        retries: retries,
+        retry_delay: retry_delay,
+        retry_on_nonzero: retry_on_nonzero,
+        host_timeout: host_timeout,
+        step_timeout: step_timeout,
+        retry_policy: retry_policy
+      )
+      results = runner.run(task)
+      if options[:format] == 'json'
+        print_results_json(task, results)
+      else
+        # Don't show summary here - it will be shown at the end for all tasks
+        print_results(results, task, show_summary: false, debug: debug_mode)
+      end
+      results
+    end
+
+    def any_failed?(all_results)
+      all_results.values.any? do |task_results|
+        task_results.values.any? { |result| result[:status] == :failed }
+      end
+    end
+
+    def task_failed?(task_results)
+      return false unless task_results.is_a?(Hash)
+
+      task_results.values.any? { |result| result[:status] == :failed }
+    end
+
+    def print_all_tasks_summary(all_results)
+      debug_mode = options[:debug] || false
+      formatter = OutputFormatter.new(debug: debug_mode)
+      puts formatter.format_summary_header
+
+      # Collect all hosts from all tasks
+      all_hosts = {}
+      all_results.each do |task_name, task_results|
+        task_results.each do |host, result|
+          all_hosts[host] ||= { ok: 0, changed: 0, failed: 0, tasks: [] }
+          counts = formatter.calculate_summary_counts(result)
+          all_hosts[host][:ok] += counts[:ok]
+          all_hosts[host][:changed] += counts[:changed]
+          all_hosts[host][:failed] += counts[:failed]
+          all_hosts[host][:tasks] << task_name
+        end
+      end
+
+      max_host_len = all_hosts.keys.map(&:length).max || 16
+      all_hosts.keys.sort.each do |host|
+        counts = all_hosts[host]
+        line = formatter.build_summary_line(host, counts, max_host_len)
+        puts formatter.colorize_summary_line(line, counts)
+      end
+    end
+
+    def print_results_json(task_name, results)
+      payload = {
+        task: task_name.to_s,
+        results: results.transform_values { |r| serialize_host_result(r) }
+      }
+      puts JSON.generate(payload)
+    end
+
+    def print_dry_run_json(hosts, task_name)
+      tasks = self.class.kdeploy_tasks
+      commands = tasks[task_name][:block].call
+
+      payload = {
+        task: task_name.to_s,
+        dry_run: true,
+        planned: hosts.transform_values do |_config|
+          commands.map { |cmd| serialize_planned_step(cmd) }
+        end
+      }
+
+      puts JSON.generate(payload)
+    end
+
+    def serialize_host_result(result)
+      {
+        status: result[:status].to_s,
+        error: result[:error],
+        steps: Array(result[:output]).map { |step| serialize_step(step) }
+      }
+    end
+
+    def serialize_step(step)
+      out = {
+        type: step[:type].to_s,
+        command: step[:command],
+        duration: step[:duration]
+      }
+
+      if step[:output].is_a?(Hash)
+        out[:stdout] = step[:output][:stdout]
+        out[:stderr] = step[:output][:stderr]
+        out[:exit_status] = step[:output][:exit_status]
+      end
+
+      out[:result] = step[:result] if step[:type] == :sync
+      out
+    end
+
+    def serialize_planned_step(cmd)
+      case cmd[:type]
+      when :run
+        { type: 'run', command: cmd[:command], sudo: cmd[:sudo] }
+      when :upload
+        { type: 'upload', source: cmd[:source], destination: cmd[:destination] }
+      when :upload_template
+        { type: 'upload_template', source: cmd[:source], destination: cmd[:destination], variables: cmd[:variables] }
+      when :sync
+        {
+          type: 'sync',
+          source: cmd[:source],
+          destination: cmd[:destination],
+          ignore: cmd[:ignore] || [],
+          exclude: cmd[:exclude] || [],
+          delete: cmd[:delete] || false,
+          fast: cmd[:fast],
+          parallel: cmd[:parallel]
+        }
+      else
+        { type: cmd[:type].to_s }
+      end
+    end
+
+    def extract_error_message(result)
+      return result[:error] if result[:error]
+
+      if result[:output].is_a?(Array)
+        result[:output].map do |o|
+          next unless o.is_a?(Hash)
+
+          err = o[:output]
+          next unless err.is_a?(Hash)
+
+          pieces = []
+          pieces << "command=#{err[:command]}" if err[:command]
+          pieces << "exit_status=#{err[:exit_status]}" if err[:exit_status]
+          pieces << "stderr=#{err[:stderr]}" if err[:stderr]
+          pieces.join(' ')
+        end.compact.join("\n")
+      else
+        result[:output].to_s
+      end
+    end
+
+    def parse_retry_policy(raw)
+      policy = JSON.parse(raw)
+      raise ArgumentError, 'retry_policy must be a JSON object' unless policy.is_a?(Hash)
+
+      policy
+    rescue JSON::ParserError => e
+      raise ArgumentError, "retry_policy JSON parse error: #{e.message}"
+    end
+
+    def resolve_retry_policy
+      if options[:retry_policy_file]
+        path = options[:retry_policy_file]
+        unless File.exist?(path)
+          raise ArgumentError,
+                "retry_policy file not found: #{path} (examples: retry_policy.example.json / retry_policy.example.yml)"
+        end
+
+        return parse_retry_policy_file(path)
+      end
+      return parse_retry_policy(options[:retry_policy]) if options[:retry_policy]
+
+      Configuration.default_retry_policy
+    end
+
+    def parse_retry_policy_file(path)
+      ext = File.extname(path).downcase
+      raw = File.read(path)
+      policy =
+        case ext
+        when '.yml', '.yaml'
+          YAML.safe_load(raw) || {}
+        else
+          JSON.parse(raw)
+        end
+      raise ArgumentError, 'retry_policy must be a JSON/YAML object' unless policy.is_a?(Hash)
+
+      policy
+    rescue JSON::ParserError, Psych::SyntaxError => e
+      raise ArgumentError, "retry_policy parse error: #{e.message}"
+    end
+  end
+end

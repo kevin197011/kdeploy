@@ -1,0 +1,9 @@
+run:
+  retries: 2
+  retry_on_exit_codes: [2, 255]
+upload:
+  retries: 0
+upload_template:
+  retries: 0
+sync:
+  retries: 1

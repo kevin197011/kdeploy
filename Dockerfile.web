@@ -25,5 +25,5 @@ RUN gem install sinatra sequel sqlite3 rackup webrick
 
 EXPOSE 4567
 
-CMD ["ruby", "web/bin/entrypoint.rb"]
+CMD ["ruby", "web-ui/bin/entrypoint.rb"]
 

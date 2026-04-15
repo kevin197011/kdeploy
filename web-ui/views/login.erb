@@ -1,0 +1,91 @@
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --primary: #6366f1;
+    --primary-hover: #4f46e5;
+    --bg-start: #0f172a;
+    --bg-end: #1e1b4b;
+    --card-bg: rgba(30, 41, 59, 0.7);
+    --border: rgba(99, 102, 241, 0.3);
+    --glow: rgba(99, 102, 241, 0.5);
+  }
+  body {
+    background: linear-gradient(135deg, var(--bg-start) 0%, #312e81 50%, var(--bg-end) 100%);
+    min-height: 100vh;
+    overflow: hidden;
+  }
+  .login-card {
+    background: var(--card-bg);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--border);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5), 0 0 40px var(--glow);
+  }
+  .login-input {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    transition: all 0.2s;
+  }
+  .login-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 20px var(--glow);
+  }
+  .login-btn {
+    background: linear-gradient(135deg, var(--primary) 0%, #8b5cf6 100%);
+    transition: all 0.2s;
+  }
+  .login-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 10px 30px var(--glow);
+  }
+  .logo-glow {
+    filter: drop-shadow(0 0 20px var(--glow));
+  }
+</style>
+
+<div class="h-screen flex items-center justify-center p-4 overflow-hidden">
+  <div class="w-full max-w-md">
+    <div class="text-center mb-8">
+      <img src="/logo.svg" alt="Kdeploy" class="inline-block w-20 h-20 mb-4 logo-glow" />
+      <h1 class="text-3xl font-bold text-white tracking-tight">Kdeploy</h1>
+      <p class="text-slate-400 mt-2">Sign in to Job Console</p>
+    </div>
+
+    <div class="login-card rounded-2xl p-8">
+      <% if @login_error %>
+        <div class="mb-6 p-4 rounded-lg bg-red-500/20 border border-red-500/30 text-red-200 text-sm">
+          <%= @login_error %>
+        </div>
+      <% end %>
+
+      <form method="post" action="/login" class="space-y-5">
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-2">Username</label>
+          <input type="text" name="username" required
+                 class="login-input w-full rounded-xl px-4 py-3 text-white placeholder-slate-500" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-300 mb-2">Password</label>
+          <input type="password" name="password" required
+                 class="login-input w-full rounded-xl px-4 py-3 text-white placeholder-slate-500" />
+        </div>
+        <button type="submit"
+                class="login-btn w-full rounded-xl px-4 py-3 text-white font-semibold">
+          Sign in
+        </button>
+      </form>
+
+      <div class="mt-6 pt-6 border-t border-slate-700/50">
+        <p class="text-xs text-slate-500 text-center">
+          Secure deployment management
+        </p>
+      </div>
+      <div class="mt-4 text-center">
+        <p class="text-xs text-slate-500">kk驱动开发</p>
+      </div>
+    </div>
+  </div>
+</div>

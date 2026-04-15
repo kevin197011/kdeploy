@@ -4,10 +4,11 @@ require 'json'
 require 'rack/test'
 
 ENV['JOB_CONSOLE_DB'] = 'sqlite::memory:'
-ENV['JOB_CONSOLE_TASK_BASE_DIR'] = File.expand_path('../..', __dir__)
 ENV['JOB_CONSOLE_TOKEN'] = 'test-token'
+ENV['JOB_CONSOLE_UI_USER'] = 'admin'
+ENV['JOB_CONSOLE_UI_PASSWORD'] = 'secret'
 
-require_relative '../../web/app/app'
+require_relative '../../web-ui/app/app'
 
 RSpec.describe Kdeploy::Web::App do
   include Rack::Test::Methods
@@ -16,13 +17,26 @@ RSpec.describe Kdeploy::Web::App do
     described_class
   end
 
-  let(:task_path) { File.expand_path('../../sample/deploy.rb', __dir__) }
+  let(:task_path) { File.expand_path('../../samples/deploy.rb', __dir__) }
 
   before do
     # Force reconnect for in-memory DB
     Kdeploy::Web::DB.connect!(url: ENV.fetch('JOB_CONSOLE_DB', nil))
-    migrations_dir = File.expand_path('../../web/db/migrate', __dir__)
+    migrations_dir = File.expand_path('../../web-ui/db/migrate', __dir__)
     Sequel::Migrator.run(Kdeploy::Web::DB.db, migrations_dir)
+    ENV['JOB_CONSOLE_TASK_BASE_DIR'] = File.expand_path('../..', __dir__)
+    Kdeploy::Web::Models::RunHostResult.dataset.delete
+    Kdeploy::Web::Models::Run.dataset.delete
+    Kdeploy::Web::Models::Job.dataset.delete
+  end
+
+  def login!
+    post '/login', username: ENV.fetch('JOB_CONSOLE_UI_USER', nil),
+                   password: ENV.fetch('JOB_CONSOLE_UI_PASSWORD', nil)
+  end
+
+  after do
+    ENV['JOB_CONSOLE_TASK_BASE_DIR'] = File.expand_path('../..', __dir__)
   end
 
   it 'creates and lists jobs via API' do
@@ -85,5 +99,18 @@ RSpec.describe Kdeploy::Web::App do
     expect(body['job_id']).to eq(job.id)
     expect(body['task_name']).to eq('deploy_web')
     expect(body['limit']).to eq('web01')
+  end
+
+  it 'saves editor content and returns file path' do
+    login!
+    post '/editor/save', content: "task :demo do\n  run 'echo hi'\nend\n"
+    expect(last_response.status).to eq(200)
+    body = JSON.parse(last_response.body)
+    expect(body['path']).to end_with('deploy.rb')
+
+    get '/editor/content'
+    expect(last_response.status).to eq(200)
+    content = JSON.parse(last_response.body)
+    expect(content['content']).to include('task :demo')
   end
 end

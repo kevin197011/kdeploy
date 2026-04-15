@@ -1,0 +1,459 @@
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --primary: #6366f1;
+    --bg-start: #0f172a;
+    --bg-end: #1e1b4b;
+    --card-bg: rgba(30, 41, 59, 0.7);
+    --border: rgba(99, 102, 241, 0.3);
+    --glow: rgba(99, 102, 241, 0.5);
+    --input-bg: rgba(15, 23, 42, 0.6);
+  }
+  body {
+    background: #f8fafc;
+  }
+  .page-header h1 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #1e293b;
+  }
+  .page-header p {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    color: #64748b;
+  }
+  .page-header h1 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+  }
+  .page-header p {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+  }
+  .editor-shell {
+    display: grid;
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 24px;
+  }
+  .panel {
+    background: white;
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(99, 102, 241, 0.3);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.15);
+    border-radius: 16px;
+    padding: 20px;
+  }
+  .panel h2 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    color: #1e293b;
+  }
+  .panel .file-path {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #64748b;
+  }
+  .panel .label {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: #64748b;
+  }
+  .CodeMirror {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    border-radius: 12px;
+    height: 520px !important;
+  }
+  .CodeMirror-scroll {
+    overflow-y: auto !important;
+    border-radius: 12px;
+  }
+  .CodeMirror-focused {
+    outline: none !important;
+  }
+  .CodeMirror-lines {
+    padding: 10px 0;
+  }
+  .editor-fallback {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: var(--input-bg);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 12px;
+    color: white;
+  }
+  .btn {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 20px;
+    border-radius: 10px;
+    transition: all 0.2s;
+  }
+  .btn-save {
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+  }
+  .btn-save:hover {
+    background: #e2e8f0;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  }
+  .btn-run {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border: none;
+    color: white;
+  }
+  .btn-run:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4);
+  }
+  .input-field {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    background: white;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    border-radius: 10px;
+    transition: all 0.2s;
+  }
+  .input-field:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+  }
+  .input-field::placeholder {
+    color: #94a3b8;
+  }
+  .status-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    color: #6366f1;
+    border-radius: 8px;
+  }
+  .modal {
+    position: fixed;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    background: rgba(10, 10, 10, 0.7);
+    backdrop-filter: blur(4px);
+    z-index: 50;
+  }
+  .modal.show {
+    display: flex;
+  }
+  .modal-card {
+    width: min(920px, 92vw);
+    max-height: 85vh;
+    background: white;
+    backdrop-filter: blur(20px);
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+    border-radius: 16px;
+    overflow: hidden;
+  }
+  .modal-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .modal-header h3 {
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    color: #1e293b;
+  }
+  .modal-header p {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #64748b;
+  }
+  .modal-body {
+    max-height: 60vh;
+    overflow-y: auto;
+    padding: 20px;
+  }
+  .close-btn {
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
+    color: #64748b;
+    transition: color 0.2s;
+  }
+  .close-btn:hover {
+    color: #1e293b;
+  }
+  .output-host {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 12px;
+  }
+  .output-host-header {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px;
+    font-weight: 500;
+    color: #6366f1;
+    margin-bottom: 12px;
+  }
+  .output-step {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #475569;
+    margin-bottom: 6px;
+  }
+  .output-error {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: #dc2626;
+    margin-top: 8px;
+  }
+  .help-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
+    color: #94a3b8;
+    border-top: 1px solid #e2e8f0;
+    padding-top: 16px;
+    margin-top: 16px;
+  }
+</style>
+
+<div class="page-header mb-6 flex items-center gap-4">
+  <img src="/logo.svg" alt="Kdeploy" class="w-10 h-10" />
+  <div>
+    <h1 class="text-3xl text-white">Deploy Studio</h1>
+    <p class="text-slate-400 mt-1">Edit <span class="text-indigo-300">deploy.rb</span> and run instantly.</p>
+  </div>
+</div>
+
+<div class="editor-shell">
+  <div class="panel">
+    <div class="flex items-center justify-between mb-4">
+      <div>
+        <h2 class="text-xl">Editor</h2>
+        <p class="file-path mt-1">File: <%= @file_path %></p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="saveBtn" class="btn btn-save">Save</button>
+        <button id="runBtn" class="btn btn-run">Run</button>
+      </div>
+    </div>
+    <div id="editor" class="CodeMirror" style="display:none;"></div>
+    <textarea id="editorFallback" class="editor-fallback w-full h-[520px] p-3"><%= @content %></textarea>
+  </div>
+
+  <div class="panel">
+    <h2 class="text-xl mb-4">Run Options</h2>
+    <div class="space-y-4 text-sm">
+      <div>
+        <label class="label block mb-2">Task Name</label>
+        <input id="taskName" type="text" placeholder="deploy_web"
+               class="input-field w-full px-3 py-2" />
+      </div>
+      <div>
+        <label class="label block mb-2">Limit Hosts</label>
+        <input id="limitHosts" type="text" placeholder="web01,web02"
+               class="input-field w-full px-3 py-2" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="label block mb-2">Parallel</label>
+          <input id="parallel" type="number" min="1" placeholder="10"
+                 class="input-field w-full px-3 py-2" />
+        </div>
+        <div>
+          <label class="label block mb-2">Retries</label>
+          <input id="retries" type="number" min="0" placeholder="0"
+                 class="input-field w-full px-3 py-2" />
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="label block mb-2">Retry Delay</label>
+          <input id="retryDelay" type="number" min="0" placeholder="1"
+                 class="input-field w-full px-3 py-2" />
+        </div>
+        <div>
+          <label class="label block mb-2">Status</label>
+          <div id="runStatus" class="status-badge px-3 py-2">Idle</div>
+        </div>
+      </div>
+      <div class="help-text">
+        Runs execute asynchronously. Output will stream into the modal after you click Run.
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="outputModal" class="modal">
+  <div class="modal-card">
+    <div class="modal-header flex items-center justify-between">
+      <div>
+        <h3 class="text-lg">Run Output</h3>
+        <p id="outputSub">Starting...</p>
+      </div>
+      <button id="closeModal" class="close-btn">Close</button>
+    </div>
+    <div class="modal-body space-y-4" id="outputBody"></div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/mode/ruby/ruby.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css" />
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/dracula.min.css" />
+
+<script>
+  const initial = <%= JSON.generate(@content) %>;
+  const editorHost = document.getElementById('editor');
+  const fallback = document.getElementById('editorFallback');
+  let editor = null;
+
+  const outputModal = document.getElementById('outputModal');
+  const outputBody = document.getElementById('outputBody');
+  const outputSub = document.getElementById('outputSub');
+  const runStatus = document.getElementById('runStatus');
+
+  function initEditor() {
+    try {
+      if (typeof CodeMirror === 'undefined') {
+        throw new Error('CodeMirror not loaded');
+      }
+      editor = CodeMirror(editorHost, {
+        value: initial,
+        mode: 'ruby',
+        theme: 'dracula',
+        lineNumbers: true,
+        matchBrackets: true,
+        autoCloseBrackets: true,
+        indentUnit: 2,
+        tabSize: 2,
+        lineWrapping: true
+      });
+      editorHost.style.display = 'block';
+      fallback.style.display = 'none';
+      setTimeout(() => editor.refresh(), 100);
+    } catch (err) {
+      console.warn('CodeMirror init failed, using fallback textarea', err);
+      editorHost.style.display = 'none';
+      fallback.style.display = 'block';
+    }
+  }
+
+  const fieldValue = (id) => document.getElementById(id).value.trim();
+
+  function getContent() {
+    if (editor && editor.getValue) return editor.getValue();
+    return fallback.value;
+  }
+
+  async function saveEditor() {
+    const payload = new URLSearchParams({ content: getContent() });
+    const res = await fetch('/editor/save', { method: 'POST', body: payload });
+    if (!res.ok) {
+      alert('Save failed');
+      return false;
+    }
+    return true;
+  }
+
+  async function runEditor() {
+    const payload = new URLSearchParams({
+      content: getContent(),
+      task_name: fieldValue('taskName'),
+      limit: fieldValue('limitHosts'),
+      parallel: fieldValue('parallel'),
+      retries: fieldValue('retries'),
+      retry_delay: fieldValue('retryDelay')
+    });
+    const res = await fetch('/editor/run', { method: 'POST', body: payload });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Run failed');
+      return;
+    }
+    openModal();
+    streamOutput(data.run_id);
+  }
+
+  function openModal() {
+    outputBody.innerHTML = '';
+    outputSub.textContent = 'Starting...';
+    outputModal.classList.add('show');
+  }
+
+  function closeModal() {
+    outputModal.classList.remove('show');
+  }
+
+  async function streamOutput(runId) {
+    runStatus.textContent = 'Running';
+    const poll = async () => {
+      const res = await fetch('/runs/' + runId + '/stream');
+      if (!res.ok) {
+        outputSub.textContent = 'Failed to fetch output';
+        runStatus.textContent = 'Failed';
+        return;
+      }
+      const data = await res.json();
+      outputSub.textContent = 'Run #' + data.run.id + ' · ' + data.run.status;
+      renderOutput(data.hosts || []);
+      if (data.run.status === 'running' || data.run.status === 'queued') {
+        setTimeout(poll, 1200);
+      } else {
+        runStatus.textContent = data.run.status;
+      }
+    };
+    poll();
+  }
+
+  function renderOutput(hosts) {
+    outputBody.innerHTML = '';
+    hosts.forEach(function(host) {
+      const container = document.createElement('div');
+      container.className = 'output-host';
+      const header = document.createElement('div');
+      header.className = 'output-host-header';
+      header.textContent = host.host_name + ' · ' + host.status;
+      container.appendChild(header);
+
+      (host.steps || []).forEach(function(step) {
+        const row = document.createElement('div');
+        row.className = 'output-step';
+        row.textContent = '[' + step.type + '] ' + step.command + ' (' + (step.duration || 0) + 's)';
+        container.appendChild(row);
+        if (step.stderr) {
+          const err = document.createElement('div');
+          err.className = 'output-error';
+          err.textContent = step.stderr;
+          container.appendChild(err);
+        }
+      });
+      outputBody.appendChild(container);
+    });
+  }
+
+  document.getElementById('saveBtn').addEventListener('click', saveEditor);
+  document.getElementById('runBtn').addEventListener('click', function() {
+    var ok = saveEditor();
+    if (ok) runEditor();
+  });
+  document.getElementById('closeModal').addEventListener('click', closeModal);
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initEditor);
+  } else {
+    initEditor();
+  }
+</script>

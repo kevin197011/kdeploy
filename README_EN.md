@@ -208,6 +208,9 @@ kdeploy execute deploy.rb deploy_web
 - `--retry-delay SECONDS`: Delay between retries in seconds (default `1`)
 - `--retry-on-nonzero`: Retry commands on nonzero exit status (default `false`)
 - `--timeout SECONDS`: Per-host execution timeout in seconds (default: none)
+- `--step-timeout SECONDS`: Per-step execution timeout in seconds (default: none)
+- `--retry-policy JSON`: Retry policy JSON (overrides `.kdeploy.yml`)
+- `--retry-policy-file PATH`: Retry policy JSON file (overrides `.kdeploy.yml`)
 
 **Examples:**
 ```bash
@@ -234,6 +237,15 @@ kdeploy execute deploy.rb deploy_web --retries 2 --retry-on-nonzero
 
 # Set per-host timeout (seconds)
 kdeploy execute deploy.rb deploy_web --timeout 120
+
+# Set per-step timeout (seconds)
+kdeploy execute deploy.rb deploy_web --step-timeout 30
+
+# Override retry policy via CLI JSON
+kdeploy execute deploy.rb deploy_web --retry-policy '{"run":{"retries":2,"retry_on_exit_codes":[2]}}'
+
+# Override retry policy via file
+kdeploy execute deploy.rb deploy_web --retry-policy-file ./retry_policy.example.json
 
 # Combine options
 kdeploy execute deploy.rb deploy_web --limit web01 --parallel 3 --dry-run
@@ -488,6 +500,45 @@ upload_template "./config/nginx.conf.erb", "/etc/nginx/nginx.conf",
 - `destination`: Remote file path
 - `variables`: Hash of variables for template rendering
 
+#### `sync` - Directory Sync
+
+Recursively sync a local directory to a remote server with filtering options.
+
+```ruby
+# Basic sync
+sync "./app", "/var/www/app"
+
+# Ignore specific files/dirs
+sync "./app", "/var/www/app",
+  ignore: [".git", "*.log", "node_modules", "*.tmp"]
+
+# Delete remote files not present locally
+sync "./app", "/var/www/app",
+  ignore: [".git", "*.log"],
+  delete: true
+
+# Exclude files (alias of ignore)
+sync "./config", "/etc/app",
+  exclude: ["*.example", "*.bak", ".env.local"]
+
+# Fast sync (prefer rsync when available)
+sync "./app", "/var/www/app",
+  fast: true
+
+# Parallel sync uploads
+sync "./app", "/var/www/app",
+  parallel: 4
+```
+
+**Parameters:**
+- `source`: Local source directory path
+- `destination`: Remote destination directory path
+- `ignore`: Patterns to ignore (gitignore-style)
+- `exclude`: Same as `ignore` for clarity
+- `delete`: Delete remote files not present locally (default: false)
+- `fast`: Enable fast sync path (prefer rsync when available, default: false)
+- `parallel`: Upload concurrency for sync (default: 1)
+
 ### Chef-Style Resource DSL
 
 Kdeploy provides a declarative resource DSL similar to Chef, which can replace or mix with low-level primitives (`run`, `upload`, `upload_template`).
@@ -647,7 +698,21 @@ For project-specific configuration, create a `.kdeploy.yml`:
 parallel: 5
 ssh_timeout: 60
 verify_host_key: true
+retries: 2
+retry_delay: 1
+retry_on_nonzero: false
+step_timeout: 30
+sync_fast: false
+sync_parallel: 4
+retry_policy:
+  run:
+    retries: 2
+    retry_on_exit_codes: [2, 255]
+  upload:
+    retries: 0
 ```
+
+**Retry policy example file**: `retry_policy.example.json`
 
 ## 🔧 Advanced Usage
 
@@ -664,6 +729,16 @@ task :deploy do
   service "nginx", action: :start if ENV['ENVIRONMENT'] == 'production'
 end
 ```
+
+### Retry Policy Example
+
+You can override retry policy via file:
+
+```bash
+kdeploy execute deploy.rb deploy_web --retry-policy-file ./retry_policy.example.json
+```
+
+Example files: `retry_policy.example.json` / `retry_policy.example.yml`
 
 ### Looping Over Hosts
 
@@ -1131,7 +1206,8 @@ end
 task :deploy_app, roles: :web do
   sync "./app", "/var/www/app",
     ignore: [".git", "*.log", "node_modules", ".env.local", "*.tmp"],
-    delete: true
+    delete: true,
+    fast: true # prefer rsync when available
   sync "./config", "/etc/app", exclude: ["*.example", "*.bak"]
   service "app", action: :restart
 end

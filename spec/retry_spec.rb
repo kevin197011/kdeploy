@@ -87,4 +87,26 @@ RSpec.describe Kdeploy::Runner do
     expect(results['web01'][:status]).to eq(:failed)
     expect(results['web01'][:error]).to match(/exit_status=1/)
   end
+
+  it 'retries only configured step types and exit codes' do
+    executor = instance_double(Kdeploy::Executor)
+    allow(Kdeploy::Executor).to receive(:new).and_return(executor)
+
+    calls = 0
+    allow(executor).to receive(:execute) do
+      calls += 1
+      raise Kdeploy::SSHError.new('Command exited with status 2', nil, command: 'false', exit_status: 2) if calls < 2
+
+      { stdout: 'ok', stderr: '', command: 'echo ok', exit_status: 0 }
+    end
+
+    allow_any_instance_of(Kdeploy::CommandExecutor).to receive(:sleep)
+
+    policy = { run: { retries: 1, retry_on_exit_codes: [2] }, upload: { retries: 0 } }
+    runner = described_class.new(hosts, { deploy: task }, retries: 0, retry_policy: policy)
+    results = runner.run(:deploy)
+
+    expect(calls).to eq(2)
+    expect(results['web01'][:status]).to eq(:success)
+  end
 end

@@ -209,6 +209,8 @@ kdeploy execute deploy.rb deploy_web
 - `--retry-delay SECONDS`: 每次重试间隔秒数（默认 `1`）
 - `--retry-on-nonzero`: 非零退出码重试开关（默认 `false`）
 - `--timeout SECONDS`: 单 host 执行超时（秒，默认不启用）
+- `--step-timeout SECONDS`: 单 step 执行超时（秒，默认不启用）
+- `--retry-policy JSON`: 重试策略 JSON（覆盖 `.kdeploy.yml`）
 
 **示例:**
 ```bash
@@ -235,6 +237,15 @@ kdeploy execute deploy.rb deploy_web --retries 2 --retry-on-nonzero
 
 # 设置单 host 超时（秒）
 kdeploy execute deploy.rb deploy_web --timeout 120
+
+# 设置单 step 超时（秒）
+kdeploy execute deploy.rb deploy_web --step-timeout 30
+
+# 使用 CLI 覆盖重试策略（JSON）
+kdeploy execute deploy.rb deploy_web --retry-policy '{"run":{"retries":2,"retry_on_exit_codes":[2]}}'
+
+# 使用文件覆盖重试策略（JSON）
+kdeploy execute deploy.rb deploy_web --retry-policy-file ./retry_policy.example.json
 
 # 组合选项
 kdeploy execute deploy.rb deploy_web --limit web01 --parallel 3 --dry-run
@@ -509,6 +520,14 @@ sync "./app", "/var/www/app",
 # 排除特定文件（与 ignore 相同，但语义更清晰）
 sync "./config", "/etc/app",
   exclude: ["*.example", "*.bak", ".env.local"]
+
+# 启用快速同步（本地/远端均有 rsync 时优先使用）
+sync "./app", "/var/www/app",
+  fast: true
+
+# 设置同步并行度
+sync "./app", "/var/www/app",
+  parallel: 4
 ```
 
 **参数:**
@@ -517,6 +536,8 @@ sync "./config", "/etc/app",
 - `ignore`: 要忽略的文件/目录模式数组（支持 .gitignore 风格的通配符）
 - `exclude`: 与 `ignore` 相同，用于语义清晰
 - `delete`: 布尔值，是否删除远程目录中不存在于源目录的文件（默认: false）
+- `fast`: 布尔值，启用快速同步路径（优先 rsync，默认: false）
+- `parallel`: 上传并行度（默认: 1）
 
 **忽略模式支持:**
 - `*.log` - 匹配所有 .log 文件
@@ -690,9 +711,23 @@ export KDEPLOY_SSH_TIMEOUT=60
 parallel: 5
 ssh_timeout: 60
 verify_host_key: true
+retries: 2
+retry_delay: 1
+retry_on_nonzero: false
+step_timeout: 30
+sync_fast: false
+sync_parallel: 4
+retry_policy:
+  run:
+    retries: 2
+    retry_on_exit_codes: [2, 255]
+  upload:
+    retries: 0
 ```
 
 配置文件会自动从当前目录向上查找，直到找到 `.kdeploy.yml` 文件。
+
+**重试策略示例文件**: `retry_policy.example.json`
 
 ## 🔧 高级用法
 
@@ -709,6 +744,16 @@ task :deploy do
   service "nginx", action: :start if ENV['ENVIRONMENT'] == 'production'
 end
 ```
+
+### 重试策略示例
+
+你可以通过文件覆盖重试策略：
+
+```bash
+kdeploy execute deploy.rb deploy_web --retry-policy-file ./retry_policy.example.json
+```
+
+示例文件见：`retry_policy.example.json` / `retry_policy.example.yml`
 
 ### 循环主机
 

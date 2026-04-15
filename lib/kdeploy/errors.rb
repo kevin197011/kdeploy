@@ -52,6 +52,13 @@ module Kdeploy
     attr_reader :original_error
   end
 
+  # Raised when a step exceeds configured timeout
+  class StepTimeoutError < Error
+    def initialize(message)
+      super("Step timeout: #{message}")
+    end
+  end
+
   # Raised when configuration is invalid
   class ConfigurationError < Error
     def initialize(message)
