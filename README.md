@@ -100,7 +100,7 @@ kdeploy execute deploy.rb deploy_web --dry-run
 ## 开发
 
 ```bash
-git clone https://github.com/kevin197011/kdeploy.git && cd kdeploy
+git clone git@github.com:kevin197011/kdeploy.git && cd kdeploy
 bundle install
 bundle exec rspec
 bundle exec rubocop

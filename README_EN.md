@@ -100,7 +100,7 @@ Includes Nginx, Node Exporter, directory sync; Vagrant available for local testi
 ## Development
 
 ```bash
-git clone https://github.com/kevin197011/kdeploy.git && cd kdeploy
+git clone git@github.com:kevin197011/kdeploy.git && cd kdeploy
 bundle install
 bundle exec rspec
 bundle exec rubocop
