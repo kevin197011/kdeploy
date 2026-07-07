@@ -2,79 +2,88 @@
 
 # -*- mode: ruby -*-
 # vi: set ft=ruby :
+#
+# 两台小配置 VM — kdeploy 全功能实测（scripts/run-tests.sh）
+#
+# Apple Silicon (M 系列) 推荐 AVF 原生 ARM64 镜像（比 VirtualBox 稳定）：
+#   vagrant plugin install vagrant-provider-avf
+#   vagrant up --provider avf
+#
+# Intel / Linux 可用 VirtualBox：
+#   vagrant up --provider virtualbox
+
+APPLE_SILICON = `uname -s`.strip == 'Darwin' && `uname -m`.strip == 'arm64'
+
+BOX_UBUNTU = APPLE_SILICON ? 'sodini-io/ubuntu-24.04-arm64' : 'bento/ubuntu-24.04'
+BOX_ROCKY  = APPLE_SILICON ? 'sodini-io/rocky-9-arm64' : 'bento/rocky-9'
 
 Vagrant.configure('2') do |config|
-  # Use Ubuntu 24.04 for testing
-  config.vm.box = 'bento/ubuntu-24.04'
+  config.vm.boot_timeout = 900
+  config.vm.box_check_update = false
+  config.vm.synced_folder '.', '/vagrant', disabled: true
 
-  # First boot can be slow (cloud-init, etc.); increase timeout
-  config.vm.boot_timeout = 600
-
-  # Configure the web server VM
   config.vm.define 'web01' do |web|
+    web.vm.box = BOX_UBUNTU
     web.vm.hostname = 'web01'
-    web.vm.network 'private_network', ip: '192.168.56.10'
+    web.vm.network 'forwarded_port', guest: 22, host: 2200, id: 'ssh', auto_correct: true, host_ip: '127.0.0.1'
+    web.vm.network 'forwarded_port', guest: 80, host: 8081, host_ip: '127.0.0.1'
 
-    # Forward SSH port (explicitly set to avoid conflicts)
-    web.vm.network 'forwarded_port', guest: 22, host: 2200, id: 'ssh', auto_correct: true
-
-    # Forward nginx port for testing (use 8081 to avoid conflicts)
-    web.vm.network 'forwarded_port', guest: 80, host: 8081
-
-    # Forward node-exporter port for testing
-    web.vm.network 'forwarded_port', guest: 9100, host: 9100
-
-    # Configure VirtualBox provider (1024MB for Ubuntu 24.04 first boot)
-    web.vm.provider 'virtualbox' do |vb|
-      vb.name = 'kdeploy-web01'
-      vb.memory = '1024'
-      vb.cpus = 1
+    web.vm.provider :avf do |avf|
+      avf.guest = :linux
+      avf.cpus = 1
+      avf.memory_mb = 768
+      avf.disk_gb = 10
+      avf.headless = true
     end
 
-    # Provision: Setup SSH key and basic packages
+    web.vm.provider :virtualbox do |vb|
+      vb.name = 'kdeploy-web01'
+      vb.memory = '768'
+      vb.cpus = 1
+      vb.customize ['modifyvm', :id, '--uartmode1', 'disconnected']
+    end
+    web.vm.box_architecture = 'arm64' if APPLE_SILICON
+
     web.vm.provision 'shell', inline: <<-SHELL
-      # Update system
+      export DEBIAN_FRONTEND=noninteractive
       sudo apt-get update
-      sudo apt-get install -y openssh-server curl
-
-      # Setup SSH key for vagrant user
-      mkdir -p /home/vagrant/.ssh
-      chmod 700 /home/vagrant/.ssh
-
-      # Allow passwordless sudo for testing
+      sudo apt-get install -y openssh-server curl rsync
       echo "vagrant ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/vagrant
-
-      # Ensure SSH is running
       sudo systemctl enable ssh
       sudo systemctl start ssh
     SHELL
   end
 
-  # # Optional: Configure a second web server for testing
-  # config.vm.define 'web02' do |web|
-  #   web.vm.hostname = 'web02'
-  #   web.vm.network 'private_network', ip: '192.168.56.11'
+  config.vm.define 'web02' do |web|
+    web.vm.box = BOX_ROCKY
+    web.vm.hostname = 'web02'
+    web.vm.network 'forwarded_port', guest: 22, host: 2201, id: 'ssh', auto_correct: true, host_ip: '127.0.0.1'
 
-  #   # Forward SSH port (explicitly set to avoid conflicts)
-  #   web.vm.network 'forwarded_port', guest: 22, host: 2201, id: 'ssh', auto_correct: true
+    web.vm.provider :avf do |avf|
+      avf.guest = :linux
+      avf.cpus = 1
+      avf.memory_mb = 512
+      avf.disk_gb = 10
+      avf.headless = true
+    end
 
-  #   # Forward nginx port for testing (use 8082 to avoid conflicts)
-  #   web.vm.network 'forwarded_port', guest: 80, host: 8082
+    web.vm.provider :virtualbox do |vb|
+      vb.name = 'kdeploy-web02'
+      vb.memory = '512'
+      vb.cpus = 1
+      vb.customize ['modifyvm', :id, '--uartmode1', 'disconnected']
+    end
+    web.vm.box_architecture = 'arm64' if APPLE_SILICON
 
-  #   web.vm.provider 'virtualbox' do |vb|
-  #     vb.name = 'kdeploy-web02'
-  #     vb.memory = '512'
-  #     vb.cpus = 1
-  #   end
-
-  #   web.vm.provision 'shell', inline: <<-SHELL
-  #     sudo apt-get update
-  #     sudo apt-get install -y openssh-server curl
-  #     mkdir -p /home/vagrant/.ssh
-  #     chmod 700 /home/vagrant/.ssh
-  #     echo "vagrant ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/vagrant
-  #     sudo systemctl enable ssh
-  #     sudo systemctl start ssh
-  #   SHELL
-  # end
+    web.vm.provision 'shell', inline: <<-SHELL
+      sudo dnf install -y openssh-server rsync curl
+      echo "vagrant ALL=(ALL) NOPASSWD: ALL" | sudo tee /etc/sudoers.d/vagrant
+      sudo useradd -m kdeploy || true
+      echo 'kdeploy:kdeploy' | sudo chpasswd
+      echo 'kdeploy ALL=(ALL) NOPASSWD: ALL' | sudo tee /etc/sudoers.d/kdeploy
+      sudo sed -i 's/^#*PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+      sudo systemctl enable sshd
+      sudo systemctl restart sshd
+    SHELL
+  end
 end

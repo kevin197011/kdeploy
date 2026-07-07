@@ -1,87 +1,45 @@
 #!/bin/bash
-# Test script for Kdeploy nginx deployment
+# 启动两台 Vagrant VM 并跑 kdeploy 全功能实测
+set -euo pipefail
 
-set -e
+cd "$(dirname "$0")"
 
-echo "🚀 Kdeploy Nginx Deployment Test Script"
-echo "=========================================="
-echo ""
+echo "🚀 Kdeploy Vagrant Lab"
+echo "======================"
 
-rake run
-
-# Colors
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m' # No Color
-
-# Check if vagrant is installed
-if ! command -v vagrant &> /dev/null; then
-    echo -e "${RED}❌ Vagrant is not installed. Please install it first.${NC}"
-    exit 1
+if ! command -v vagrant &>/dev/null; then
+  echo "❌ Vagrant not installed: https://www.vagrantup.com/" >&2
+  exit 1
 fi
 
-# Check if kdeploy is installed
-if ! command -v kdeploy &> /dev/null; then
-    echo -e "${RED}❌ Kdeploy is not installed. Please install it first:${NC}"
-    echo "   gem install kdeploy"
-    exit 1
+# shellcheck source=scripts/kdeploy.sh
+source ./scripts/kdeploy.sh
+if ! kdeploy_cmd version &>/dev/null; then
+  echo "❌ kdeploy not found. From repo root: rake run" >&2
+  exit 1
 fi
 
-echo -e "${GREEN}✅ Prerequisites check passed${NC}"
-echo ""
-
-# Step 1: Start VMs
-echo -e "${YELLOW}Step 1: Starting Vagrant VMs...${NC}"
-vagrant up
-echo ""
-
-# Step 2: Wait for VMs to be ready and check SSH connectivity
-echo -e "${YELLOW}Step 2: Waiting for VMs to be ready and checking SSH...${NC}"
-sleep 5
-
-# Check SSH connectivity using vagrant ssh
-check_ssh() {
-    local host=$1
-    local ip=$2
-    local max_attempts=15
-    local attempt=1
-
-    while [ "$attempt" -le "$max_attempts" ]; do
-        if vagrant ssh "$host" -c "echo 'SSH OK'" &> /dev/null 2>&1; then
-            echo -e "${GREEN}✅ $host ($ip) is ready${NC}"
-            return 0
-        fi
-        local mod_result=$((attempt % 3))
-        if [ "$mod_result" -eq 0 ]; then
-            echo -e "${YELLOW}⏳ Waiting for $host ($ip) to be ready... (attempt $attempt/$max_attempts)${NC}"
-        fi
-        sleep 2
-        attempt=$((attempt + 1))
-    done
-
-    echo -e "${RED}❌ $host ($ip) is not responding after $max_attempts attempts${NC}"
-    echo -e "${YELLOW}💡 Try running: vagrant ssh $host${NC}"
-    return 1
-}
-
-if ! check_ssh web01 10.0.0.1; then
-    echo -e "${RED}⚠️  web01 SSH check failed, but continuing...${NC}"
+VAGRANT_ARGS=()
+if [[ "$(uname -s)" == "Darwin" && "$(uname -m)" == "arm64" ]]; then
+  if vagrant plugin list 2>/dev/null | grep -q vagrant-provider-avf; then
+    echo "▶ Apple Silicon: using AVF + ARM64 boxes (sodini-io/*-arm64)"
+    VAGRANT_ARGS=(--provider avf)
+  else
+    echo "⚠️  M 系列 Mac 建议安装 AVF 插件（比 VirtualBox 稳定）：" >&2
+    echo "   vagrant plugin install vagrant-provider-avf" >&2
+    echo "   vagrant box add sodini-io/ubuntu-24.04-arm64 --provider avf" >&2
+    echo "   vagrant box add sodini-io/rocky-9-arm64 --provider avf" >&2
+    echo "▶ Fallback: VirtualBox + bento/* (arm64)" >&2
+    VAGRANT_ARGS=(--provider virtualbox)
+  fi
+else
+  VAGRANT_ARGS=(--provider virtualbox)
 fi
 
-echo ""
+echo "▶ Starting VMs (web01 Ubuntu 768MB + web02 Rocky 512MB)..."
+# AVF 并行 up 可能触发 cloud-init seed 冲突，逐台启动
+vagrant up web01 "${VAGRANT_ARGS[@]}"
+vagrant up web02 "${VAGRANT_ARGS[@]}"
 
-# # Step 3: Test connection with dry run
-# echo -e "${YELLOW}Step 3: Testing connection (dry run)...${NC}"
-# kdeploy execute deploy.rb --dry-run || true
-# echo ""
-
-# Step 4: Execute all tasks
-echo -e "${YELLOW}Step 4: Executing all tasks...${NC}"
-echo -e "${YELLOW}⚠️  This will execute ALL tasks defined in deploy.rb${NC}"
-echo -e "${YELLOW}   Tasks include: nginx installation, configuration, node-exporter deployment, etc.${NC}"
-echo ""
-kdeploy execute deploy.rb
-echo ""
-
-
+chmod +x scripts/wait-ssh.sh scripts/run-tests.sh scripts/bootstrap.sh
+./scripts/run-tests.sh

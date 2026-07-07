@@ -79,7 +79,70 @@ template "/etc/nginx/nginx.conf",
   variables: { domain_name: "example.com", worker_processes: 4 }
 ```
 
-## 🚀 Quick Start with Vagrant
+## 🚀 Quick Start — 全功能实测（两台小配置 VM）
+
+| VM | 发行版 | 内存 | 用途 |
+|----|--------|------|------|
+| `web01` | Ubuntu 24.04 ARM64 | 768MB | apt、`package`、nginx、`service`、sync |
+| `web02` | Rocky 9 ARM64 | 512MB | yum；同机 `kdeploy` 用户测密码 SSH |
+
+### M 系列 Mac（推荐 AVF 原生虚拟化）
+
+VirtualBox 在 Apple Silicon 上 SSH 常不稳定，请用 **Apple Virtualization Framework**：
+
+```bash
+vagrant plugin install vagrant-provider-avf
+vagrant box add sodini-io/ubuntu-24.04-arm64 --provider avf
+vagrant box add sodini-io/rocky-9-arm64 --provider avf
+
+cd samples
+./test.sh                    # 自动选 --provider avf
+# 或
+vagrant up --provider avf
+./scripts/run-tests.sh
+```
+
+镜像来源：[sodini-io/vagrant-provider-avf](https://github.com/sodini-io/vagrant-provider-avf)（`ubuntu-24.04-arm64` / `rocky-9-arm64`）。
+
+### Intel Mac / Linux（VirtualBox）
+
+```bash
+cd samples
+vagrant up --provider virtualbox
+./scripts/run-tests.sh
+```
+
+Box：`bento/ubuntu-24.04`、`bento/rocky-9`（可加 `vm.box_architecture = 'arm64'` 于 ARM 主机）。
+
+`deploy.rb` 会从 `vagrant ssh-config` 读取实际 SSH 端口与私钥，兼容 AVF / VirtualBox。
+
+### 一键实测
+
+```bash
+cd samples
+./test.sh
+```
+
+单任务：`kdeploy execute deploy.rb smoke --dry-run`
+
+### 实测任务与需求映射
+
+| 任务 | 覆盖 |
+|------|------|
+| `smoke` / `smoke_password` | 连通性、密钥 + 密码 |
+| `dry_run_all_syntax` | 全部资源原语 dry-run |
+| `primitives` | `upload`、`upload_template` |
+| `resources_apt` | apt `package`、`template`、`file`、`service` |
+| `resources_yum` | yum `package` |
+| `sync_lab` / `sync_advanced` | `sync` ignore/exclude/delete/fast |
+| `target_*` / `assigned_echo` | `on`、`roles`、`assign_task` |
+| 脚本层 | `--dry-run`、`--format json`、`--limit`、`--parallel` |
+
+演示任务（`nginx.rb` 等）保留在 `tasks/`，默认未纳入 `deploy.rb`，可手动 `include_tasks`。
+
+---
+
+## 🚀 Quick Start with Vagrant (legacy detail)
 
 ### Prerequisites
 
@@ -90,28 +153,19 @@ template "/etc/nginx/nginx.conf",
 ### Step 1: Start Vagrant VMs
 
 ```bash
-# Start the VMs (this will download the Ubuntu box on first run)
 vagrant up
-
-# Check VM status
 vagrant status
-
-# SSH into a VM to verify it's working
 vagrant ssh web01
+vagrant ssh web02
 ```
 
 ### Step 2: Verify SSH Configuration
 
 Vagrant automatically generates SSH keys and sets up port forwarding for each VM. The `deploy.rb` is configured to use:
-- **web01**: `127.0.0.1:2200` (Vagrant port forwarding)
-- **web02**: `127.0.0.1:2201` (Vagrant port forwarding)
+- **web01**: `127.0.0.1:2200` (Ubuntu, vagrant key)
+- **web02**: `127.0.0.1:2201` (Rocky, vagrant key)
+- **web02-pw**: `127.0.0.1:2201` (Rocky, `kdeploy` / `kdeploy` 密码)
 - SSH keys: `.vagrant/machines/{vm_name}/virtualbox/private_key`
-
-These are created automatically when you run `vagrant up`. You can check the SSH configuration with:
-```bash
-vagrant ssh-config web01
-vagrant ssh-config web02
-```
 
 If you want to use your own SSH key or connect via private network:
 

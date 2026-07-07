@@ -8,5 +8,6 @@ gemspec
 # Development dependencies
 gem 'irb'
 gem 'logger', '~> 1.7'
+gem 'rdoc', '7.0.3'
 gem 'rspec', '~> 3.13'
 gem 'rubocop', '~> 1.82', group: :development
