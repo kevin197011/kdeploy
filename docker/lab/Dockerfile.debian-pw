@@ -1,0 +1,20 @@
+FROM debian:12-slim
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends openssh-server sudo rsync \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/sshd \
+    && useradd -m -s /bin/bash kdeploy \
+    && echo 'kdeploy:kdeploy' | chpasswd \
+    && echo 'kdeploy ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kdeploy \
+    && chmod 440 /etc/sudoers.d/kdeploy \
+    && sed -i 's/#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+    && sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 22
+ENTRYPOINT ["/entrypoint.sh"]

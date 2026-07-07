@@ -11,8 +11,7 @@ module Kdeploy
                    retry_on_nonzero: Configuration.default_retry_on_nonzero,
                    host_timeout: Configuration.default_host_timeout,
                    step_timeout: Configuration.default_step_timeout,
-                   retry_policy: Configuration.default_retry_policy,
-                   on_step: nil)
+                   retry_policy: Configuration.default_retry_policy)
       @hosts = hosts
       @tasks = tasks
       @parallel = parallel
@@ -25,7 +24,6 @@ module Kdeploy
       @host_timeout = normalize_timeout(host_timeout)
       @step_timeout = normalize_timeout(step_timeout)
       @retry_policy = retry_policy
-      @on_step = on_step
       @pool = Concurrent::FixedThreadPool.new(@parallel)
       @results = Concurrent::Hash.new
     end
@@ -67,6 +65,7 @@ module Kdeploy
             pending.delete(future)
             progressed = true
           elsif timeout_exceeded?(started_at, now)
+            future.cancel if future.respond_to?(:cancel)
             @results[host_name] ||= {
               status: :failed,
               error: "execution timeout after #{@host_timeout}s",
@@ -132,7 +131,6 @@ module Kdeploy
       commands.each do |command|
         step_result = execute_command(command_executor, command, name)
         result[:output] << step_result
-        emit_step(name, step_result, result, task_name)
       rescue StandardError => e
         step = step_description(command)
         result[:status] = :failed
@@ -144,7 +142,6 @@ module Kdeploy
           error: "#{e.class}: #{e.message}",
           output: error_output_for_step(e)
         }
-        emit_step(name, result[:output].last, result, task_name)
         break
       end
     end
@@ -216,15 +213,6 @@ module Kdeploy
       else
         base
       end
-    end
-
-    def emit_step(host_name, step_result, result, task_name)
-      return unless @on_step
-
-      @on_step.call(host_name, step_result, result, task_name)
-    rescue StandardError
-      # Best-effort only; never fail execution because of streaming hooks.
-      nil
     end
 
     def execute_command(command_executor, command, host_name)

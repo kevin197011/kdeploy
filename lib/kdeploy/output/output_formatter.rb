@@ -18,7 +18,6 @@ module Kdeploy
     def format_host_status(host, status)
       status_str = case status
                    when :success then @pastel.green('✓ ok')
-                   when :changed then @pastel.yellow('~ changed')
                    else @pastel.red('✗ failed')
                    end
       @pastel.bright_white("  #{host.ljust(20)} #{status_str}")
@@ -101,21 +100,18 @@ module Kdeploy
     end
 
     def calculate_summary_counts(result)
-      ok = %i[success changed].include?(result[:status]) ? result[:output].size : 0
+      ok = result[:status] == :success ? result[:output].size : 0
       failed = result[:status] == :failed ? 1 : 0
-      changed = result[:status] == :changed ? result[:output].size : 0
-      { ok: ok, failed: failed, changed: changed }
+      { ok: ok, failed: failed }
     end
 
     def build_summary_line(host, counts, max_host_len)
       ok_w = 7
-      changed_w = 11
       failed_w = 10
 
       ok_str = @pastel.green("ok=#{counts[:ok].to_s.ljust(ok_w - 3)}")
-      changed_str = @pastel.yellow("changed=#{counts[:changed].to_s.ljust(changed_w - 8)}")
       failed_str = @pastel.red("failed=#{counts[:failed].to_s.ljust(failed_w - 7)}")
-      "#{host.ljust(max_host_len)} : #{ok_str}  #{changed_str}  #{failed_str}"
+      "#{host.ljust(max_host_len)} : #{ok_str}  #{failed_str}"
     end
 
     def colorize_summary_line(line, counts)

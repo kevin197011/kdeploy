@@ -1,0 +1,6 @@
+database:
+  host: lab-db
+  name: kdeploy_lab
+
+logging:
+  level: info

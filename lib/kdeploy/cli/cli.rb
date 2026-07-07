@@ -58,16 +58,16 @@ module Kdeploy
     method_option :retry_policy, type: :string, desc: 'Retry policy JSON to override config file'
     method_option :retry_policy_file, type: :string, desc: 'Retry policy JSON file to override config file'
     def execute(task_file, task_name = nil)
-      load_config_file
-      show_banner_once
       @task_file_dir = File.dirname(File.expand_path(task_file))
+      Configuration.load_for_execute(task_dir: @task_file_dir)
+      show_banner_once
       load_task_file(task_file)
 
       tasks_to_run = determine_tasks(task_name)
       all_results = execute_tasks(tasks_to_run)
 
-      # Exit non-zero if any executed host failed.
-      exit 1 if any_failed?(all_results)
+      # Exit non-zero if any executed host failed or a task could not run.
+      exit 1 if any_failed?(all_results) || @task_errors
     rescue StandardError => e
       puts Kdeploy::Banner.show_error(e.message)
       exit 1
@@ -76,7 +76,8 @@ module Kdeploy
     private
 
     def load_config_file
-      Configuration.load_from_file
+      # ponytail: kept for compatibility; prefer Configuration.load_for_execute
+      Configuration.load_for_execute(task_dir: @task_file_dir)
     end
 
     def load_task_file(file)
@@ -107,6 +108,8 @@ module Kdeploy
       return hosts unless limit
 
       host_names = limit.split(',').map(&:strip)
+      unknown = host_names.reject { |name| hosts.key?(name) }
+      warn "Warning: --limit ignored unknown host(s): #{unknown.join(', ')}" if unknown.any?
       hosts.slice(*host_names)
     end
 
@@ -149,7 +152,7 @@ module Kdeploy
     end
 
     def print_host_result(host, result, formatter)
-      if %i[success changed].include?(result[:status])
+      if %i[success].include?(result[:status])
         print_success_result(host, result, formatter)
       else
         print_failure_result(host, result, formatter)
@@ -225,19 +228,31 @@ module Kdeploy
     end
 
     def determine_tasks(task_name)
-      task_name ? [task_name.to_sym] : self.class.kdeploy_tasks.keys
+      if task_name
+        sym = task_name.to_sym
+        raise TaskNotFoundError, task_name unless self.class.kdeploy_tasks.key?(sym)
+
+        [sym]
+      else
+        self.class.kdeploy_tasks.keys
+      end
     end
 
     def execute_tasks(tasks_to_run)
       all_results = {}
+      @task_errors = false
+
+      if tasks_to_run.empty?
+        puts Kdeploy::Banner.show_error('No tasks defined in task file')
+        @task_errors = true
+        return all_results
+      end
 
       tasks_to_run.each do |task|
         task_results = execute_single_task(task)
-        # Collect results for final summary
         all_results[task] = task_results if task_results
 
-        # Stop executing remaining tasks once any host failed for this task.
-        break if task_failed?(task_results)
+        break if task_failed?(task_results) || @task_errors
       end
 
       # Show combined summary at the end for all tasks
@@ -252,6 +267,8 @@ module Kdeploy
 
       if hosts.empty?
         puts Kdeploy::Banner.show_error("No hosts found for task: #{task}")
+        puts 'This usually means no hosts matched the task configuration or --limit filter.'
+        @task_errors = true
         return nil
       end
 
@@ -323,10 +340,9 @@ module Kdeploy
       all_hosts = {}
       all_results.each do |task_name, task_results|
         task_results.each do |host, result|
-          all_hosts[host] ||= { ok: 0, changed: 0, failed: 0, tasks: [] }
+          all_hosts[host] ||= { ok: 0, failed: 0, tasks: [] }
           counts = formatter.calculate_summary_counts(result)
           all_hosts[host][:ok] += counts[:ok]
-          all_hosts[host][:changed] += counts[:changed]
           all_hosts[host][:failed] += counts[:failed]
           all_hosts[host][:tasks] << task_name
         end

@@ -1,0 +1,19 @@
+# frozen_string_literal: true — target: Ubuntu 24.04 (apt + rsync + optional nginx)
+FROM ubuntu:24.04
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+       openssh-server sudo rsync curl ca-certificates nginx \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/sshd \
+    && useradd -m -s /bin/bash kdeploy \
+    && echo 'kdeploy ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/kdeploy \
+    && chmod 440 /etc/sudoers.d/kdeploy
+
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+EXPOSE 22
+ENTRYPOINT ["/entrypoint.sh"]

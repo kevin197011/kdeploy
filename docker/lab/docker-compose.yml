@@ -1,0 +1,112 @@
+# Kdeploy 功能实测环境 — 多发行版 SSH 目标机 + 测试 Runner
+# 用法见 docker/lab/README.md
+
+services:
+  keygen:
+    image: alpine:3.20
+    volumes:
+      - lab_keys:/keys
+    command: >
+      sh -c '
+        apk add --no-cache openssh-keygen >/dev/null &&
+        if [ ! -f /keys/id_rsa ]; then
+          ssh-keygen -t ed25519 -f /keys/id_rsa -N "" &&
+          cp /keys/id_rsa.pub /keys/authorized_keys &&
+          chmod 600 /keys/id_rsa &&
+          chmod 644 /keys/id_rsa.pub /keys/authorized_keys
+        fi &&
+        echo "lab ssh keys ready"
+      '
+    restart: "no"
+
+  ubuntu-web01:
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu
+    hostname: ubuntu-web01
+    volumes:
+      - lab_keys:/keys:ro
+    networks: [lab]
+    depends_on:
+      keygen:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', '/bin/bash', '-c', 'echo >/dev/tcp/127.0.0.1/22']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  ubuntu-web02:
+    build:
+      context: .
+      dockerfile: Dockerfile.ubuntu
+    hostname: ubuntu-web02
+    volumes:
+      - lab_keys:/keys:ro
+    networks: [lab]
+    depends_on:
+      keygen:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', '/bin/bash', '-c', 'echo >/dev/tcp/127.0.0.1/22']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  rocky-db01:
+    build:
+      context: .
+      dockerfile: Dockerfile.rocky
+    hostname: rocky-db01
+    volumes:
+      - lab_keys:/keys:ro
+    networks: [lab]
+    depends_on:
+      keygen:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', '/bin/bash', '-c', 'echo >/dev/tcp/127.0.0.1/22']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  debian-pw01:
+    build:
+      context: .
+      dockerfile: Dockerfile.debian-pw
+    hostname: debian-pw01
+    networks: [lab]
+    depends_on:
+      keygen:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ['CMD', '/bin/bash', '-c', 'echo >/dev/tcp/127.0.0.1/22']
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  # 一键跑完全部实测（profile: test）
+  runner:
+    build:
+      context: ../..
+      dockerfile: docker/lab/Dockerfile.runner
+    volumes:
+      - lab_keys:/keys:ro
+    networks: [lab]
+    depends_on:
+      ubuntu-web01:
+        condition: service_healthy
+      ubuntu-web02:
+        condition: service_healthy
+      rocky-db01:
+        condition: service_healthy
+      debian-pw01:
+        condition: service_healthy
+    profiles: [test]
+
+networks:
+  lab:
+    driver: bridge
+
+volumes:
+  lab_keys:

@@ -104,6 +104,33 @@ RSpec.describe Kdeploy::CLI do
     end
   end
 
+  it 'exits non-zero when no hosts match the task' do
+    Dir.mktmpdir do |dir|
+      deploy = File.join(dir, 'deploy.rb')
+      File.write(deploy, <<~RUBY)
+        host "web01", user: "ubuntu", ip: "10.0.0.1"
+
+        task :deploy_web, on: %w[missing_host] do
+          run "echo hello"
+        end
+      RUBY
+
+      expect do
+        described_class.start(['execute', deploy, 'deploy_web', '--no-banner'])
+      end.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
+    end
+  end
+
+  it 'exits non-zero when task name is unknown' do
+    Dir.mktmpdir do |dir|
+      deploy = write_deploy_file(dir)
+
+      expect do
+        described_class.start(['execute', deploy, 'missing_task', '--no-banner'])
+      end.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
+    end
+  end
+
   it 'supports JSON output format for execute results' do
     Dir.mktmpdir do |dir|
       deploy = write_deploy_file(dir)

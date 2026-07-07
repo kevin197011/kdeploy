@@ -1,0 +1,7 @@
+parallel: 4
+ssh_timeout: 30
+verify_host_key: never
+retries: 1
+retry_delay: 1
+sync_fast: true
+sync_parallel: 2

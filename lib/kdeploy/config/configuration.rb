@@ -56,6 +56,22 @@ module Kdeploy
         nil
       end
 
+      # Load config for execute: CWD walk-up, then task file dir (overrides), then env vars.
+      def load_for_execute(task_dir: nil, cwd: Dir.pwd)
+        reset
+        load_from_file(find_config_file(cwd))
+        load_from_file(find_config_file(task_dir)) if task_dir
+        apply_env_overrides
+      end
+
+      def apply_env_overrides
+        parallel = positive_int_env('KDEPLOY_PARALLEL')
+        @default_parallel = parallel if parallel
+
+        ssh_timeout = positive_int_env('KDEPLOY_SSH_TIMEOUT')
+        @default_ssh_timeout = ssh_timeout if ssh_timeout
+      end
+
       def find_config_file(start_dir = Dir.pwd)
         current_dir = File.expand_path(start_dir)
 
@@ -88,6 +104,14 @@ module Kdeploy
         @default_step_timeout = config['step_timeout'] if config.key?('step_timeout')
         @default_retry_policy = config['retry_policy'] if config.key?('retry_policy')
         @default_sync_parallel = config['sync_parallel'] if config.key?('sync_parallel')
+      end
+
+      def positive_int_env(key)
+        raw = ENV.fetch(key, nil)
+        return nil if raw.nil? || raw.to_s.strip.empty?
+
+        value = raw.to_i
+        value.positive? ? value : nil
       end
 
       def parse_verify_host_key(value)
