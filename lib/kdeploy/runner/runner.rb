@@ -26,6 +26,7 @@ module Kdeploy
       @retry_policy = retry_policy
       @pool = Concurrent::FixedThreadPool.new(@parallel)
       @results = Concurrent::Hash.new
+      @results_mutex = Mutex.new
     end
 
     def run(task_name)
@@ -66,11 +67,16 @@ module Kdeploy
             progressed = true
           elsif timeout_exceeded?(started_at, now)
             future.cancel if future.respond_to?(:cancel)
-            @results[host_name] ||= {
-              status: :failed,
-              error: "execution timeout after #{@host_timeout}s",
-              output: []
-            }
+            begin
+              meta[:executor_ref]&.get&.abort!
+            rescue StandardError
+              # ignore abort errors
+            end
+            store_result_once(host_name, {
+                                status: :failed,
+                                error: "execution timeout after #{@host_timeout}s",
+                                output: []
+                              })
             pending.delete(future)
             progressed = true
           end
@@ -85,22 +91,24 @@ module Kdeploy
     def create_task_futures(task, task_name)
       @future_meta = {}
       @hosts.map do |name, config|
-        started_at = Concurrent::AtomicReference.new(nil)
+        # Start the host-timeout clock when scheduled so pool wait cannot skip timeout.
+        started_at = Concurrent::AtomicReference.new(Time.now)
+        executor_ref = Concurrent::AtomicReference.new(nil)
         future = Concurrent::Future.execute(executor: @pool) do
-          started_at.set(Time.now)
-          execute_task_for_host(name, config, task, task_name)
+          execute_task_for_host(name, config, task, task_name, executor_ref)
         end
-        @future_meta[future] = { host_name: name, started_at: started_at }
+        @future_meta[future] = { host_name: name, started_at: started_at, executor_ref: executor_ref }
         future
       end
     end
 
     private
 
-    def execute_task_for_host(name, config, task, task_name)
+    def execute_task_for_host(name, config, task, task_name, executor_ref = nil)
       # Add base_dir to config for path resolution
       config_with_base_dir = config.merge(base_dir: @base_dir)
       executor = Executor.new(config_with_base_dir)
+      executor_ref&.set(executor)
       command_executor = CommandExecutor.new(
         executor,
         @output,
@@ -126,7 +134,9 @@ module Kdeploy
     end
 
     def execute_commands(task, command_executor, name, result, task_name)
-      commands = task[:block].call
+      plan = Kdeploy::DSL.normalize_plan(task[:block].call)
+      commands = plan[:commands]
+      on_failure = plan[:on_failure]
 
       commands.each do |command|
         step_result = execute_command(command_executor, command, name)
@@ -142,26 +152,46 @@ module Kdeploy
           error: "#{e.class}: #{e.message}",
           output: error_output_for_step(e)
         }
+        run_on_failure(on_failure, command_executor, name, result)
         break
       end
     end
 
+    def run_on_failure(on_failure, command_executor, name, result)
+      return if on_failure.nil? || on_failure.empty?
+
+      on_failure.each do |command|
+        step_result = execute_command(command_executor, command, name)
+        step_result = step_result.merge(on_failure: true)
+        result[:output] << step_result
+      rescue StandardError => e
+        result[:output] << {
+          type: command[:type],
+          command: step_command_string(command),
+          duration: 0.0,
+          on_failure: true,
+          error: "#{e.class}: #{e.message}",
+          output: error_output_for_step(e)
+        }
+      end
+    end
+
     def collect_future_result(future, host_name)
-      return if @results.key?(host_name)
+      return if result_recorded?(host_name)
 
       begin
         future_result = future.value
         if future_result.nil?
-          @results[host_name] = { status: :unknown, error: 'Future returned nil', output: [] }
+          store_result_once(host_name, { status: :unknown, error: 'Future returned nil', output: [] })
         elsif future_result.is_a?(Array) && future_result.length == 2
           name, result = future_result
-          @results[name] = result
+          store_result_once(name, result)
         else
-          @results[host_name] = {
-            status: :unknown,
-            error: "Unexpected result format: #{future_result.class}",
-            output: []
-          }
+          store_result_once(host_name, {
+                              status: :unknown,
+                              error: "Unexpected result format: #{future_result.class}",
+                              output: []
+                            })
         end
 
         if future.rejected?
@@ -170,12 +200,22 @@ module Kdeploy
           rescue StandardError
             'Unknown error'
           end
-          @results[host_name] ||= { status: :failed, error: error, output: [] }
+          store_result_once(host_name, { status: :failed, error: error, output: [] })
         end
       rescue StandardError => e
-        @results[host_name] = { status: :failed, error: "#{e.class}: #{e.message}", output: [] }
+        store_result_once(host_name, { status: :failed, error: "#{e.class}: #{e.message}", output: [] })
       ensure
-        @results[host_name] ||= { status: :unknown, error: 'No result collected', output: [] }
+        store_result_once(host_name, { status: :unknown, error: 'No result collected', output: [] })
+      end
+    end
+
+    def result_recorded?(host_name)
+      @results_mutex.synchronize { @results.key?(host_name) }
+    end
+
+    def store_result_once(host_name, result)
+      @results_mutex.synchronize do
+        @results[host_name] ||= result
       end
     end
 
@@ -225,6 +265,10 @@ module Kdeploy
         command_executor.execute_upload_template(command, host_name)
       when :sync
         command_executor.execute_sync(command, host_name)
+      when :wait_port
+        command_executor.execute_wait_port(command, host_name)
+      when :wait_http
+        command_executor.execute_wait_http(command, host_name)
       else
         raise ConfigurationError, "Unknown command type: #{command[:type]}"
       end
@@ -240,6 +284,10 @@ module Kdeploy
         "upload_template: #{command[:source]} -> #{command[:destination]}"
       when :sync
         "sync: #{command[:source]} -> #{command[:destination]}"
+      when :wait_port
+        "wait_port: #{command[:port]}"
+      when :wait_http
+        "wait_http: #{command[:url]}"
       else
         command[:type].to_s
       end
@@ -256,6 +304,10 @@ module Kdeploy
         "upload_template: #{command[:source]} -> #{command[:destination]}"
       when :sync
         "sync: #{command[:source]} -> #{command[:destination]}"
+      when :wait_port
+        "wait_port: #{command[:port]}"
+      when :wait_http
+        "wait_http: #{command[:url]}"
       else
         command[:type].to_s
       end

@@ -7,7 +7,7 @@ module Kdeploy
   class Configuration
     DEFAULT_PARALLEL = 10
     DEFAULT_SSH_TIMEOUT = 30
-    DEFAULT_VERIFY_HOST_KEY = :never
+    DEFAULT_VERIFY_HOST_KEY = :accept_new
     DEFAULT_RETRIES = 0
     DEFAULT_RETRY_DELAY = 1
     DEFAULT_HOST_TIMEOUT = nil
@@ -49,7 +49,12 @@ module Kdeploy
         config_path ||= find_config_file
         return unless config_path && File.exist?(config_path)
 
-        config = YAML.safe_load_file(config_path, permitted_classes: [Symbol])
+        raw = File.read(config_path)
+        config = begin
+          YAML.safe_load(raw, permitted_classes: [Symbol])
+        rescue ArgumentError
+          YAML.safe_load(raw, [Symbol])
+        end
         apply_config(config)
       rescue StandardError => e
         warn "Warning: Failed to load config from #{config_path}: #{e.message}"

@@ -13,6 +13,7 @@ module Kdeploy
       create_directory_structure
       create_deploy_file
       create_config_files
+      create_kdeploy_yml
       create_readme
       show_success_message
     end
@@ -165,6 +166,20 @@ module Kdeploy
       CONF
     end
 
+    def create_kdeploy_yml
+      path = File.join(@target_dir, '.kdeploy.yml')
+      return if File.exist?(path)
+
+      File.write(path, <<~YAML)
+        # Kdeploy project config (see SECURITY.md in the kdeploy repo)
+        parallel: 10
+        ssh_timeout: 30
+        # Library default is accept_new (safer). Use never only for ephemeral labs.
+        verify_host_key: accept_new
+        retries: 0
+      YAML
+    end
+
     def create_readme
       File.write(File.join(@target_dir, 'README.md'), <<~MD)
         # Deployment Project
@@ -214,6 +229,10 @@ module Kdeploy
         ```
 
         See the main documentation for more details on sudo usage.
+
+        ## Security
+
+        Default `verify_host_key` is `accept_new`. Use `always` for strict known_hosts, or `never` only for ephemeral labs.
 
         ## 🚀 Usage
 
@@ -283,6 +302,7 @@ module Kdeploy
         #{pastel.dim("  #{File.join(@target_dir, 'config/nginx.conf.erb')}")}
         #{pastel.dim("  #{File.join(@target_dir, 'config/app.conf')}")}
         #{pastel.dim("  #{File.join(@target_dir, 'README.md')}")}
+        #{pastel.dim("  #{File.join(@target_dir, '.kdeploy.yml')}")}
 
         #{pastel.bright_white('Try running:')}
         #{pastel.bright_cyan("  kdeploy execute #{File.join(@target_dir, 'deploy.rb')} deploy_web --dry-run")}

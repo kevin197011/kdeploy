@@ -46,11 +46,21 @@ RSpec.describe Kdeploy do
       expect(klass.get_task_hosts(:maintenance)).to match_array(%w[web01])
     end
 
+    it 'warns when on:/roles reference unknown hosts' do
+      klass.host 'web01', user: 'ubuntu', ip: '10.0.0.1'
+      klass.role :web, %w[web01 missing]
+      klass.task :t, on: %w[web01 ghost], roles: :web do
+        run 'true'
+      end
+      expect { klass.get_task_hosts(:t) }.to output(/not in inventory/).to_stderr
+    end
+
     it 'compiles package resource to run step' do
       klass.task :install do
         package 'nginx'
       end
       cmds = klass.tasks[:install][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(1)
       expect(cmds[0][:type]).to eq(:run)
       expect(cmds[0][:command]).to include('apt-get')
@@ -63,11 +73,12 @@ RSpec.describe Kdeploy do
         package 'nginx', version: '1.18', platform: :apt
       end
       cmds = klass.tasks[:install][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds[0][:command]).to include('nginx=1.18')
       klass.task :install_yum do
         package 'nginx', platform: :yum
       end
-      cmds_yum = klass.tasks[:install_yum][:block].call
+      cmds_yum = Kdeploy::DSL.normalize_plan(klass.tasks[:install_yum][:block].call)[:commands]
       expect(cmds_yum[0][:command]).to include('yum')
     end
 
@@ -76,6 +87,7 @@ RSpec.describe Kdeploy do
         service 'nginx', action: %i[enable start]
       end
       cmds = klass.tasks[:svc][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(2)
       expect(cmds[0][:command]).to include('systemctl enable nginx')
       expect(cmds[1][:command]).to include('systemctl start nginx')
@@ -86,6 +98,7 @@ RSpec.describe Kdeploy do
         template '/etc/nginx/nginx.conf', source: './config/nginx.conf.erb', variables: { port: 3000 }
       end
       cmds = klass.tasks[:tmpl][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(1)
       expect(cmds[0][:type]).to eq(:upload_template)
       expect(cmds[0][:source]).to eq('./config/nginx.conf.erb')
@@ -101,6 +114,7 @@ RSpec.describe Kdeploy do
         end
       end
       cmds = klass.tasks[:tmpl_block][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(1)
       expect(cmds[0][:type]).to eq(:upload_template)
       expect(cmds[0][:source]).to eq('./config/app.erb')
@@ -112,6 +126,7 @@ RSpec.describe Kdeploy do
         file '/etc/nginx/app.conf', source: './config/app.conf'
       end
       cmds = klass.tasks[:f][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(1)
       expect(cmds[0][:type]).to eq(:upload)
       expect(cmds[0][:source]).to eq('./config/app.conf')
@@ -123,6 +138,7 @@ RSpec.describe Kdeploy do
         directory '/etc/nginx/conf.d'
       end
       cmds = klass.tasks[:dir][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(1)
       expect(cmds[0][:type]).to eq(:run)
       expect(cmds[0][:command]).to include('mkdir -p')
@@ -133,6 +149,7 @@ RSpec.describe Kdeploy do
         directory '/var/log/app', mode: '0755'
       end
       cmds = klass.tasks[:dir_mode][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(2)
       expect(cmds[0][:command]).to include('mkdir -p')
       expect(cmds[1][:command]).to include('chmod 0755')
@@ -145,6 +162,7 @@ RSpec.describe Kdeploy do
         service 'nginx', action: :restart
       end
       cmds = klass.tasks[:mixed][:block].call
+      cmds = Kdeploy::DSL.normalize_plan(cmds)[:commands]
       expect(cmds.size).to eq(3)
       expect(cmds[0][:type]).to eq(:run)
       expect(cmds[0][:command]).to include('apt-get')
@@ -181,6 +199,53 @@ RSpec.describe Kdeploy do
         # Should not override roles/on if already defined in the included file
         expect(klass.tasks[:t2][:roles]).to eq([:db])
       end
+    end
+
+    it 'interpolates %{vars} in run commands' do
+      klass.vars app: 'demo'
+      klass.task :echo do
+        run 'echo %{app}'
+      end
+      cmds = Kdeploy::DSL.normalize_plan(klass.tasks[:echo][:block].call)[:commands]
+      expect(cmds[0][:command]).to eq('echo demo')
+    end
+
+    it 'supports tags filtering helper' do
+      klass.task :a, tags: %i[web] do
+        run 'true'
+      end
+      klass.task :b, tags: %i[db] do
+        run 'true'
+      end
+      expect(klass.tasks_matching_tags(%w[web])).to eq([:a])
+    end
+
+    it 'collects on_failure commands separately' do
+      klass.task :x do
+        run 'false'
+        on_failure do
+          run 'echo failed'
+        end
+      end
+      plan = Kdeploy::DSL.normalize_plan(klass.tasks[:x][:block].call)
+      expect(plan[:commands].size).to eq(1)
+      expect(plan[:on_failure].size).to eq(1)
+      expect(plan[:on_failure][0][:command]).to eq('echo failed')
+    end
+
+    it 'compiles wait_port and wait_http steps' do
+      klass.task :ready do
+        wait_port 8080, timeout: 5
+        wait_http 'http://%{ip}:8080/health', timeout: 5, code: 200
+      end
+      klass.vars ip: '127.0.0.1'
+      # re-create task after vars for interpolation at plan time
+      klass.task :ready2 do
+        wait_http 'http://%{ip}:8080/health', timeout: 5
+      end
+      plan = Kdeploy::DSL.normalize_plan(klass.tasks[:ready2][:block].call)
+      expect(plan[:commands][0][:type]).to eq(:wait_http)
+      expect(plan[:commands][0][:url]).to eq('http://127.0.0.1:8080/health')
     end
   end
 

@@ -1,5 +1,7 @@
+# See SECURITY.md — production should use verify_host_key: accept_new|always
 parallel: 4
 ssh_timeout: 30
+# Production: prefer accept_new or always (see SECURITY.md)
 verify_host_key: never
 retries: 1
 retry_delay: 1

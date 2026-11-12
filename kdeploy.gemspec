@@ -17,8 +17,10 @@ Gem::Specification.new do |spec|
 
   spec.metadata = {
     'homepage_uri' => 'https://github.com/kevin197011/kdeploy',
-    'source_code_uri' => 'https://github.com/kevin197011/kdeploy.git',
+    'source_code_uri' => 'https://github.com/kevin197011/kdeploy',
     'changelog_uri' => 'https://github.com/kevin197011/kdeploy/blob/main/CHANGELOG.md',
+    'bug_tracker_uri' => 'https://github.com/kevin197011/kdeploy/issues',
+    'documentation_uri' => 'https://github.com/kevin197011/kdeploy/blob/main/docs/REQUIREMENTS.md',
     'rubygems_mfa_required' => 'true'
   }
 
@@ -29,6 +31,7 @@ Gem::Specification.new do |spec|
                           ext/**/*
                           *.md
                           *.txt
+                          LICENSE
                         ]).reject { |f| File.directory?(f) }
 
   spec.bindir = 'exe'

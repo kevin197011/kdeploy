@@ -1,0 +1,35 @@
+name: Docker Lab (weekly)
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'docker/lab/**'
+      - 'lib/**'
+      - 'kdeploy.gemspec'
+      - 'Gemfile*'
+
+jobs:
+  lab:
+    name: docker/lab runner
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: docker/lab
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Start targets
+        run: docker compose up -d --build
+
+      - name: Run lab tests
+        run: docker compose --profile test up --build --abort-on-container-exit --exit-code-from runner runner
+
+      - name: Tear down
+        if: always()
+        run: docker compose --profile test down

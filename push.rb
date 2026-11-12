@@ -5,4 +5,6 @@
 # This software is released under the MIT License.
 # https://opensource.org/licenses/MIT
 
-system 'rake'
+# Maintainer release helper → rake push (lint, spec, bump, commit version, push).
+# Day-to-day: bundle exec rake   # runs spec
+abort 'push.rb failed' unless system('bundle', 'exec', 'rake', 'push')

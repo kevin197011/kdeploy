@@ -26,7 +26,7 @@ Define hosts and tasks in Ruby DSL; execute deployments and configuration across
 - Agentless SSH execution with multi-host concurrency
 - Ruby DSL: hosts, roles, tasks; Chef-style resources (`package`, `service`, `template`, `sync`, etc.)
 - File upload, ERB templates, directory sync (optional rsync fast path)
-- Dry-run, JSON output, retry/timeout policies
+- Dry-run, JSON output/`--report`, `--tags` / `--extra-vars`, `wait_*` / `on_failure`, retry/timeout policies
 
 **Stack**: Ruby, Thor, net-ssh, concurrent-ruby
 
@@ -77,16 +77,27 @@ Common flags: `--limit web01`, `--parallel 5`, `--format json`, `--retries 3`. S
 
 ## Configuration
 
-Place `.kdeploy.yml` in your project (walks up from CWD):
+Place `.kdeploy.yml` in your project (walks up from CWD). Retry policy examples: `retry_policy.example.json`
+
+## Non-goals
+
+Kdeploy is **not** an Ansible/Chef convergence engine and has **no** Web UI / agent. See [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md).
+
+## Security
+
+- Default `verify_host_key` is `accept_new`. Prefer `always` for locked fleets; use `never` only for ephemeral labs.
+- Prefer SSH keys and NOPASSWD sudo; treat task files with passwords as secrets.
+- See [SECURITY.md](SECURITY.md)
+
+Example:
 
 ```yaml
 parallel: 10
 ssh_timeout: 30
-verify_host_key: never
+# Production:
+verify_host_key: accept_new
 retries: 0
 ```
-
-Retry policy examples: `retry_policy.example.json`
 
 ## Samples
 
@@ -110,11 +121,11 @@ Requirements and acceptance criteria: [docs/REQUIREMENTS.md](docs/REQUIREMENTS.m
 
 ## Contributing
 
-Fork → feature branch → tests pass → PR. Use [Conventional Commits](https://www.conventionalcommits.org/).
+See [CONTRIBUTING.md](CONTRIBUTING.md). Fork → feature branch → tests pass → PR. Use [Conventional Commits](https://www.conventionalcommits.org/).
 
 ## License
 
-[MIT](https://opensource.org/licenses/MIT)
+[MIT](LICENSE) · [Changelog](CHANGELOG.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md)
 
 ## Links
 

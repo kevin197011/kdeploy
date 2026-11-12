@@ -109,4 +109,21 @@ RSpec.describe Kdeploy::Runner do
     expect(calls).to eq(2)
     expect(results['web01'][:status]).to eq(:success)
   end
+
+  it 'does not retry authentication failures' do
+    executor = instance_double(Kdeploy::Executor)
+    allow(Kdeploy::Executor).to receive(:new).and_return(executor)
+    calls = 0
+    allow(executor).to receive(:execute) do
+      calls += 1
+      raise Kdeploy::SSHError.new('SSH authentication failed: bad key', nil)
+    end
+    allow_any_instance_of(Kdeploy::CommandExecutor).to receive(:sleep)
+
+    runner = described_class.new(hosts, { deploy: task }, retries: 3, retry_delay: 0)
+    results = runner.run(:deploy)
+
+    expect(calls).to eq(1)
+    expect(results['web01'][:status]).to eq(:failed)
+  end
 end

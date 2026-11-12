@@ -7,8 +7,6 @@ parallel: 5
 # SSH connection timeout in seconds (default: 30)
 ssh_timeout: 60
 
-# SSH host key verification
-# Options: always, never, accept_new
-# default: never
+# SSH host key verification: always | never | accept_new
+# Library default: accept_new. This repo uses never for local/CI convenience.
 verify_host_key: never
-

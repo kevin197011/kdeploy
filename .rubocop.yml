@@ -7,6 +7,10 @@ Style/Documentation:
     - web/**/*
     - spec/**/*
 
+# Kdeploy DSL uses %{name} placeholders (not Kernel.sprintf annotated tokens).
+Style/FormatStringToken:
+  Enabled: false
+
 Gemspec/AddRuntimeDependency:
   Enabled: true
 Gemspec/AttributeAssignment:

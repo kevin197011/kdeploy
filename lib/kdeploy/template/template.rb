@@ -51,7 +51,8 @@ module Kdeploy
     end
 
     def self.extract_template_identifiers(template_content)
-      identifiers = template_content.scan(/<%=\s*([a-zA-Z_]\w*)/).flatten
+      # Match <%= name %> and <%= @name %>; still ignores method calls / hash access.
+      identifiers = template_content.scan(/<%=\s*@?([a-zA-Z_]\w*)/).flatten
       identifiers.uniq - ruby_keywords
     end
 

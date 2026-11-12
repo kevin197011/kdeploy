@@ -26,7 +26,7 @@
 - 无代理 SSH 远程执行，多主机并发
 - Ruby DSL：主机、角色、任务；Chef 风格资源（`package`、`service`、`template`、`sync` 等）
 - 文件上传、ERB 模板、目录同步（可选 rsync 快速路径）
-- 试运行、JSON 输出、重试/超时策略
+- 试运行、JSON 输出/`--report`、`--tags` / `--extra-vars`、`wait_*` / `on_failure`、重试/超时策略
 
 **技术栈**：Ruby、Thor、net-ssh、concurrent-ruby
 
@@ -77,16 +77,26 @@ kdeploy execute deploy.rb deploy_web             # 执行
 
 ## 配置
 
-项目根目录可放 `.kdeploy.yml`（从当前目录向上查找）：
+项目根目录可放 `.kdeploy.yml`（从当前目录向上查找）。重试策略示例：`retry_policy.example.json`
+
+## 非目标
+
+Kdeploy **不是** Ansible/Chef 收敛引擎，也 **没有** Web UI / Agent。边界见 [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md)。
+
+## 安全注意
+
+- 默认 `verify_host_key: accept_new`。更严用 `always`；临时 lab 才用 `never`。
+- 优先 SSH 密钥 + NOPASSWD sudo；任务文件若含密码视为机密。
+- 详见 [SECURITY.md](SECURITY.md)
+
+配置示例：
 
 ```yaml
 parallel: 10
 ssh_timeout: 30
-verify_host_key: never
+verify_host_key: accept_new
 retries: 0
 ```
-
-重试策略示例：`retry_policy.example.json`
 
 ## 示例
 
@@ -110,11 +120,11 @@ bundle exec rubocop
 
 ## 贡献
 
-Fork → 功能分支 → 测试通过 → PR。提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/)。
+见 [CONTRIBUTING.md](CONTRIBUTING.md)。Fork → 功能分支 → 测试通过 → PR。提交信息遵循 [Conventional Commits](https://www.conventionalcommits.org/)。
 
 ## 许可证
 
-[MIT](https://opensource.org/licenses/MIT)
+[MIT](LICENSE) · [变更记录](CHANGELOG.md) · [安全策略](SECURITY.md) · [贡献指南](CONTRIBUTING.md)
 
 ## 链接
 

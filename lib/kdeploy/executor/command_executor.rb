@@ -1,6 +1,9 @@
 # frozen_string_literal: true
 
 require 'timeout'
+require 'socket'
+require 'uri'
+require 'net/http'
 
 module Kdeploy
   # Executes a single command and records execution time
@@ -83,6 +86,32 @@ module Kdeploy
       build_sync_result(source, destination, result, duration)
     end
 
+    def execute_wait_port(command, _host_name)
+      port = command[:port]
+      timeout = command[:timeout] || 30
+      interval = command[:interval] || 1
+      ip = @executor.host_ip
+      _result, duration = measure_time do
+        with_timeout { wait_until(timeout, interval, "port #{ip}:#{port}") { port_open?(ip, port) } }
+      end
+      { command: "wait_port: #{ip}:#{port}", duration: duration, type: :wait_port }
+    end
+
+    # -- runtime %{ip}/%{host} placeholders
+    def execute_wait_http(command, host_name)
+      url = command[:url].to_s.gsub('%{ip}', @executor.host_ip.to_s).gsub('%{host}', host_name.to_s)
+      # rubocop:enable Style/FormatStringToken
+      timeout = command[:timeout] || 30
+      interval = command[:interval] || 1
+      expect_code = command[:code] || 200
+      _result, duration = measure_time do
+        with_timeout do
+          wait_until(timeout, interval, "http #{url}") { http_ok?(url, expect_code) }
+        end
+      end
+      { command: "wait_http: #{url} (#{expect_code})", duration: duration, type: :wait_http }
+    end
+
     private
 
     def build_sync_result(source, destination, result, duration)
@@ -112,7 +141,7 @@ module Kdeploy
         attempts += 1
         yield
       rescue SSHError, SCPError, TemplateError => e
-        raise if e.is_a?(SSHError) && e.exit_status && !retry_on_exit_status?(e.exit_status, exit_codes)
+        raise unless retryable_error?(e, exit_codes)
         raise if attempts > (max_retries + 1)
 
         sleep(@retry_delay) if @retry_delay.positive?
@@ -120,12 +149,59 @@ module Kdeploy
       end
     end
 
+    def retryable_error?(error, exit_codes)
+      return true unless error.is_a?(SSHError)
+      return retry_on_exit_status?(error.exit_status, exit_codes) if error.exit_status
+
+      !authentication_error?(error)
+    end
+
+    def authentication_error?(error)
+      original = error.respond_to?(:original_error) ? error.original_error : nil
+      return true if original && original.class.name.include?('AuthenticationFailed')
+
+      error.message.match?(/authentication failed/i)
+    end
+
     def with_timeout(&block)
       return yield unless @step_timeout&.positive?
 
       Timeout.timeout(@step_timeout, &block)
     rescue Timeout::Error
+      @executor.abort! if @executor.respond_to?(:abort!)
       raise StepTimeoutError, "exceeded #{@step_timeout}s"
+    end
+
+    def wait_until(timeout, interval, label)
+      deadline = Time.now + timeout.to_f
+      loop do
+        return true if yield
+        raise StepTimeoutError, "#{label} not ready within #{timeout}s" if Time.now >= deadline
+
+        sleep([interval.to_f, 0.1].max)
+      end
+    end
+
+    def port_open?(ip, port)
+      Socket.tcp(ip, port, connect_timeout: 2) { true }
+    rescue StandardError
+      false
+    end
+
+    def http_ok?(url, expect_code)
+      uri = URI.parse(url)
+      response = Net::HTTP.start(
+        uri.host,
+        uri.port,
+        use_ssl: uri.scheme == 'https',
+        open_timeout: 2,
+        read_timeout: 2
+      ) do |http|
+        http.request(Net::HTTP::Get.new(uri.request_uri))
+      end
+      response.code.to_i == expect_code.to_i
+    rescue StandardError
+      false
     end
 
     def retries_for(step_type)

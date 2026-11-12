@@ -157,9 +157,18 @@ module Kdeploy
       when :upload_template
         "#{@pastel.blue('>')} Template: #{command[:source]} -> #{command[:destination]}"
       when :sync
-        ignore_str = command[:ignore]&.any? ? " (ignore: #{command[:ignore].join(', ')})" : ''
-        delete_str = command[:delete] ? ' (delete: true)' : ''
-        "#{@pastel.blue('>')} Sync: #{command[:source]} -> #{command[:destination]}#{ignore_str}#{delete_str}"
+        extras = []
+        extras << "ignore: #{command[:ignore].join(', ')}" if command[:ignore]&.any?
+        extras << "exclude: #{command[:exclude].join(', ')}" if command[:exclude]&.any?
+        extras << 'delete: true' if command[:delete]
+        extras << 'fast: true' if command[:fast]
+        extras << "parallel: #{command[:parallel]}" if command[:parallel]
+        suffix = extras.empty? ? '' : " (#{extras.join(', ')})"
+        "#{@pastel.blue('>')} Sync: #{command[:source]} -> #{command[:destination]}#{suffix}"
+      when :wait_port
+        "#{@pastel.magenta('>')} wait_port: #{command[:port]} (timeout: #{command[:timeout]})"
+      when :wait_http
+        "#{@pastel.magenta('>')} wait_http: #{command[:url]} (code: #{command[:code]}, timeout: #{command[:timeout]})"
       else
         "#{@pastel.blue('>')} #{command[:type]}: #{command}"
       end

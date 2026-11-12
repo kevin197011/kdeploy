@@ -21,7 +21,8 @@ module Kdeploy
       @port = host_config[:port] # Added custom port support
       @use_sudo = host_config[:use_sudo] || false
       @sudo_password = host_config[:sudo_password]
-      @base_dir = host_config[:base_dir] # Base directory for resolving relative paths
+      raw_base = host_config[:base_dir]
+      @base_dir = raw_base ? File.expand_path(raw_base) : nil
     end
 
     def execute(command, use_sudo: nil)
@@ -29,12 +30,42 @@ module Kdeploy
       command = wrap_with_sudo(command) if use_sudo
 
       Net::SSH.start(@ip, @user, ssh_options) do |ssh|
-        execute_command_on_ssh(ssh, command)
+        with_active_ssh(ssh) { execute_command_on_ssh(ssh, command) }
       end
     rescue Net::SSH::AuthenticationFailed => e
       raise SSHError.new("SSH authentication failed: #{e.message}", e)
     rescue StandardError => e
       raise SSHError.new("SSH execution failed: #{e.message}", e)
+    end
+
+    # Best-effort close of the in-flight SSH session (step/host timeout).
+    def host_ip
+      @ip
+    end
+
+    def host_name
+      @host
+    end
+
+    def abort!
+      ssh = @active_ssh
+      return unless ssh
+
+      warn "Warning: aborting SSH session for #{@host} (#{@ip})"
+      begin
+        ssh.close
+      rescue StandardError
+        # ignore
+      ensure
+        @active_ssh = nil
+      end
+    end
+
+    def with_active_ssh(ssh)
+      @active_ssh = ssh
+      yield
+    ensure
+      @active_ssh = nil if @active_ssh.equal?(ssh)
     end
 
     def execute_command_on_ssh(ssh, command)
@@ -53,6 +84,7 @@ module Kdeploy
         end
       end
       ssh.loop
+      raise_missing_exit_status!(command, stdout, stderr) if exit_status.nil?
       raise_nonzero_exit!(command, exit_status, stdout, stderr)
       build_command_result(stdout, stderr, command, exit_status)
     end
@@ -76,8 +108,18 @@ module Kdeploy
       }
     end
 
+    def raise_missing_exit_status!(command, stdout, stderr)
+      raise SSHError.new(
+        'Command completed without exit status',
+        nil,
+        command: command,
+        exit_status: nil,
+        stdout: stdout.strip,
+        stderr: stderr.strip
+      )
+    end
+
     def raise_nonzero_exit!(command, exit_status, stdout, stderr)
-      return if exit_status.nil?
       return if exit_status.zero?
 
       raise SSHError.new(
@@ -101,7 +143,9 @@ module Kdeploy
         upload_with_sudo(resolved_source, destination)
       else
         Net::SCP.start(@ip, @user, ssh_options) do |scp|
-          scp.upload!(resolved_source, destination)
+          with_active_ssh(scp.respond_to?(:session) ? scp.session : nil) do
+            scp.upload!(resolved_source, destination)
+          end
         end
       end
     rescue StandardError => e
@@ -112,6 +156,8 @@ module Kdeploy
       # Resolve relative paths relative to base_dir
       resolved_source = resolve_path(source)
       Template.render_and_upload(self, resolved_source, destination, variables)
+    rescue ArgumentError, Errno::ENOENT, FileNotFoundError
+      raise
     rescue StandardError => e
       raise TemplateError.new("Template upload failed: #{e.message}", e)
     end
@@ -140,6 +186,8 @@ module Kdeploy
           use_sudo: use_sudo
         )
         return rsync_result if rsync_result
+
+        warn 'Warning: rsync fast path unavailable; falling back to SCP sync'
       end
 
       # Collect files to sync
@@ -163,6 +211,8 @@ module Kdeploy
         deleted: deleted_count,
         total: files_to_sync.size
       }
+    rescue FileNotFoundError, ArgumentError
+      raise
     rescue StandardError => e
       raise SCPError.new("Directory sync failed: #{e.message}", e)
     end
@@ -175,16 +225,18 @@ module Kdeploy
 
       # Upload to temp location first
       Net::SCP.start(@ip, @user, ssh_options) do |scp|
-        scp.upload!(source, temp_dest)
+        with_active_ssh(scp.respond_to?(:session) ? scp.session : nil) do
+          scp.upload!(source, temp_dest)
+        end
       end
 
       # Move to final destination with sudo
-      move_command = "mv #{temp_dest} #{destination}"
+      move_command = "mv #{Shellwords.escape(temp_dest)} #{Shellwords.escape(destination)}"
       execute(move_command, use_sudo: true)
     rescue StandardError => e
       # Try to clean up temp file if it exists
       begin
-        execute("rm -f #{temp_dest}", use_sudo: false) if defined?(temp_dest)
+        execute("rm -f #{Shellwords.escape(temp_dest)}", use_sudo: false) if defined?(temp_dest)
       rescue StandardError
         # Ignore cleanup errors
       end
@@ -257,7 +309,7 @@ module Kdeploy
         sudo_flag,
         "-e \"#{ssh_cmd}\"",
         "#{Shellwords.escape(source)}/",
-        "#{@user}@#{@ip}:#{Shellwords.escape(destination)}/"
+        "#{Shellwords.escape(@user)}@#{Shellwords.escape(@ip)}:#{Shellwords.escape(destination)}/"
       ].reject(&:empty?)
       parts.join(' ')
     end
@@ -314,27 +366,41 @@ module Kdeploy
       # Do not add sudo again if command already starts with sudo
       return command if command.strip.start_with?('sudo')
 
-      # Wrap multi-line/control/compound commands so sudo applies to the full block
+      # Wrap multi-line/control/compound commands so sudo applies to the full block.
+      # Encode payload as base64 so local shell quoting cannot break on quotes/newlines.
       needs_wrap = command.include?("\n") ||
                    command.match?(/\b(if|for|while|case|function)\b/) ||
                    command.match?(/\s(&&|\|\||;)\s/)
 
       if needs_wrap
-        # Escape single quotes in command, then execute via bash -c
-        escaped_command = command.gsub("'", "'\"'\"'")
+        remote = base64_bash_command(command)
         if @sudo_password
-          escaped_password = @sudo_password.gsub('\'', "'\"'\"'").gsub('$', '\\$').gsub('`', '\\`')
-          "echo '#{escaped_password}' | sudo -S bash -c '#{escaped_command}'"
+          "#{sudo_password_prefix}sudo -S #{remote}"
         else
-          "sudo bash -c '#{escaped_command}'"
+          "sudo #{remote}"
         end
       elsif @sudo_password
-        # Wrap single-line command directly
-        escaped_password = @sudo_password.gsub('\'', "'\"'\"'").gsub('$', '\\$').gsub('`', '\\`')
-        "echo '#{escaped_password}' | sudo -S #{command}"
+        "#{sudo_password_prefix}sudo -S #{command}"
       else
         "sudo #{command}"
       end
+    end
+
+    def base64_bash_command(command)
+      encoded = [command].pack('m0')
+      "bash -c #{Shellwords.escape("echo #{encoded} | base64 -d | bash")}"
+    end
+
+    def sudo_password_prefix
+      validate_sudo_password!
+      # printf + Shellwords avoids echo/newline injection into the local shell.
+      "printf '%s\\n' #{Shellwords.escape(@sudo_password)} | "
+    end
+
+    def validate_sudo_password!
+      return if @sudo_password.nil?
+
+      raise ArgumentError, 'sudo_password must not contain CR, LF, or NUL' if @sudo_password.match?(/[\r\n\0]/)
     end
 
     def collect_files_to_sync(source_dir, filter)
@@ -443,6 +509,14 @@ module Kdeploy
         deleted_count += 1
       rescue StandardError
         # Ignore deletion errors
+      end
+
+      # Best-effort: remove empty directories left behind (not the sync root).
+      prune = "find #{destination_dir.shellescape} -mindepth 1 -depth -type d -empty -delete 2>/dev/null || true"
+      begin
+        execute(prune, use_sudo: use_sudo)
+      rescue StandardError
+        # Ignore prune errors
       end
 
       deleted_count

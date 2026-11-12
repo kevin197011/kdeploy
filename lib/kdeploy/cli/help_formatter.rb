@@ -35,6 +35,9 @@ module Kdeploy
         #{@pastel.dim('    --retries N')}                Retry count for network operations (default: 0; overridden by .kdeploy.yml)
         #{@pastel.dim('    --retry-delay SECONDS')}      Retry delay seconds (default: 1; overridden by .kdeploy.yml)
         #{@pastel.dim('    --retry-on-nonzero')}         Retry commands on nonzero exit status (default: false; overridden by .kdeploy.yml)
+        #{@pastel.dim('    --report PATH')}              Write JSON report to PATH
+        #{@pastel.dim('    --tags TAGS')}                Only run tasks matching tags
+        #{@pastel.dim('    --extra-vars K=V,...')}       Set/override DSL vars
         #{@pastel.dim('    --timeout SECONDS')}          Per-host execution timeout seconds (default: none; overridden by .kdeploy.yml)
         #{@pastel.dim('    --step-timeout SECONDS')}     Per-step execution timeout seconds (default: none; overridden by .kdeploy.yml)
         #{@pastel.dim('    --retry-policy JSON')}        Retry policy JSON (overrides .kdeploy.yml)
@@ -67,6 +70,9 @@ module Kdeploy
 
         #{@pastel.dim('# Machine-readable output')}
         #{@pastel.bright_cyan('kdeploy execute deploy.rb deploy_web --format json --no-banner')}
+
+        #{@pastel.dim('# Tags, vars, and JSON report')}
+        #{@pastel.bright_cyan('kdeploy execute deploy.rb --tags web --extra-vars app=demo --report out.json')}
 
         #{@pastel.dim('# Retry transient network failures')}
         #{@pastel.bright_cyan('kdeploy execute deploy.rb deploy_web --retries 3 --retry-delay 1')}

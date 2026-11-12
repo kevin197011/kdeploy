@@ -79,4 +79,11 @@ RSpec.describe Kdeploy::Executor do
       expect(e.command).to eq('false')
     }
   end
+
+  it 'raises SSHError when remote omits exit status' do
+    ssh = FakeSSH.new(FakeChannel.new(exit_status: nil, stdout: 'partial', stderr: ''))
+    expect do
+      executor.execute_command_on_ssh(ssh, 'echo hi')
+    end.to raise_error(Kdeploy::SSHError, /without exit status/)
+  end
 end

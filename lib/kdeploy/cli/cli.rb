@@ -57,14 +57,19 @@ module Kdeploy
     method_option :step_timeout, type: :numeric, desc: 'Per-step execution timeout seconds (default: none)'
     method_option :retry_policy, type: :string, desc: 'Retry policy JSON to override config file'
     method_option :retry_policy_file, type: :string, desc: 'Retry policy JSON file to override config file'
+    method_option :report, type: :string, desc: 'Write JSON execution report to PATH'
+    method_option :tags, type: :string, desc: 'Only run tasks with these tags (comma-separated)'
+    method_option :extra_vars, type: :string, desc: 'Extra vars key=value,key2=value2 (overrides DSL vars)'
     def execute(task_file, task_name = nil)
       @task_file_dir = File.dirname(File.expand_path(task_file))
       Configuration.load_for_execute(task_dir: @task_file_dir)
       show_banner_once
       load_task_file(task_file)
+      apply_extra_vars!
 
       tasks_to_run = determine_tasks(task_name)
       all_results = execute_tasks(tasks_to_run)
+      write_report_file(all_results) if options[:report]
 
       # Exit non-zero if any executed host failed or a task could not run.
       exit 1 if any_failed?(all_results) || @task_errors
@@ -82,6 +87,8 @@ module Kdeploy
 
     def load_task_file(file)
       validate_task_file(file)
+      # Avoid leaking hosts/roles/tasks across execute invocations in one process.
+      self.class.clear_inventory!
       # Use module_eval with top-level binding to keep heredoc compatible
       self.class.module_eval(File.read(file), file)
     rescue StandardError => e
@@ -125,7 +132,8 @@ module Kdeploy
     end
 
     def print_dry_run_for_host(name, config, task_name, formatter)
-      commands = self.class.kdeploy_tasks[task_name][:block].call
+      plan = Kdeploy::DSL.normalize_plan(self.class.kdeploy_tasks[task_name][:block].call)
+      commands = plan[:commands]
       output = commands.map { |cmd| formatter.format_command_for_dry_run(cmd) }.join("\n")
       title = "#{name} (#{config[:ip]})"
       puts formatter.format_dry_run_box(title, output)
@@ -184,7 +192,7 @@ module Kdeploy
         formatter.format_template_steps(steps, shown)
       when :sync
         formatter.format_sync_steps(steps, shown)
-      when :run
+      when :run, :wait_port, :wait_http
         formatter.format_run_steps(steps, shown)
       else
         []
@@ -228,14 +236,26 @@ module Kdeploy
     end
 
     def determine_tasks(task_name)
-      if task_name
-        sym = task_name.to_sym
-        raise TaskNotFoundError, task_name unless self.class.kdeploy_tasks.key?(sym)
+      selected =
+        if task_name
+          sym = task_name.to_sym
+          raise TaskNotFoundError, task_name unless self.class.kdeploy_tasks.key?(sym)
 
-        [sym]
-      else
-        self.class.kdeploy_tasks.keys
+          [sym]
+        else
+          self.class.kdeploy_tasks.keys
+        end
+
+      return selected unless options[:tags]
+
+      wanted = options[:tags].split(',').map(&:strip)
+      tagged = self.class.tasks_matching_tags(wanted)
+      filtered = selected.select { |name| tagged.include?(name) }
+      if filtered.empty?
+        puts Kdeploy::Banner.show_error("No tasks matched tags: #{wanted.join(', ')}")
+        @task_errors = true
       end
+      filtered
     end
 
     def execute_tasks(tasks_to_run)
@@ -366,7 +386,8 @@ module Kdeploy
 
     def print_dry_run_json(hosts, task_name)
       tasks = self.class.kdeploy_tasks
-      commands = tasks[task_name][:block].call
+      plan = Kdeploy::DSL.normalize_plan(tasks[task_name][:block].call)
+      commands = plan[:commands]
 
       payload = {
         task: task_name.to_s,
@@ -393,6 +414,7 @@ module Kdeploy
         command: step[:command],
         duration: step[:duration]
       }
+      out[:error] = step[:error] if step[:error]
 
       if step[:output].is_a?(Hash)
         out[:stdout] = step[:output][:stdout]
@@ -423,6 +445,10 @@ module Kdeploy
           fast: cmd[:fast],
           parallel: cmd[:parallel]
         }
+      when :wait_port
+        { type: 'wait_port', port: cmd[:port], timeout: cmd[:timeout], interval: cmd[:interval] }
+      when :wait_http
+        { type: 'wait_http', url: cmd[:url], timeout: cmd[:timeout], interval: cmd[:interval], code: cmd[:code] }
       else
         { type: cmd[:type].to_s }
       end
@@ -488,6 +514,35 @@ module Kdeploy
       policy
     rescue JSON::ParserError, Psych::SyntaxError => e
       raise ArgumentError, "retry_policy parse error: #{e.message}"
+    end
+
+    def apply_extra_vars!
+      raw = options[:extra_vars]
+      return if raw.nil? || raw.strip.empty?
+
+      self.class.merge_extra_vars!(parse_extra_vars(raw))
+    end
+
+    def parse_extra_vars(raw)
+      raw.split(',').each_with_object({}) do |pair, acc|
+        key, value = pair.split('=', 2)
+        raise ArgumentError, "Invalid --extra-vars pair: #{pair}" if key.nil? || value.nil?
+
+        acc[key.strip.to_sym] = value.strip
+      end
+    end
+
+    def write_report_file(all_results)
+      path = options[:report]
+      payload = {
+        version: Kdeploy::VERSION,
+        generated_at: Time.now.utc.strftime('%Y-%m-%dT%H:%M:%SZ'),
+        tasks: all_results.transform_keys(&:to_s).transform_values do |task_results|
+          task_results.transform_values { |r| serialize_host_result(r) }
+        end
+      }
+      File.write(path, JSON.pretty_generate(payload))
+      warn "Report written: #{path}" unless options[:format] == 'json'
     end
   end
 end
