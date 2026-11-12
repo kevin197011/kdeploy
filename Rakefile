@@ -52,19 +52,46 @@ task :bump, [:type] do |_t, args|
   puts "#{old_v} -> #{new_v}"
 end
 
-desc 'Maintainer release: rubocop -A, spec, patch bump, commit version, push'
+desc 'Maintainer release: clean tree → rubocop -A → spec → bump → commit → pull --rebase → push'
 task push: :clean_gems do
+  abort_if_dirty!('Start with a clean worktree (commit or stash first).')
+
   Rake::Task['rubocop:auto'].invoke
   Rake::Task[:spec].invoke
 
   old_v = Kdeploy::VERSION
   new_v = bump_and_save!(:patch)
 
-  sh 'git add lib/kdeploy/version.rb'
+  # Commit bump + any rubocop/lockfile edits so pull --rebase never sees dirt.
+  sh 'git add lib/kdeploy/version.rb Gemfile.lock'
+  sh 'git add -u'
+  abort_if_untracked_noise!
   sh "git commit -m 'chore: bump to #{new_v}'"
+  abort_if_dirty!('Worktree dirty after commit; refuse pull --rebase.')
+
   sh 'git pull --rebase'
   sh 'git push'
   puts "Pushed #{new_v} (was #{old_v})"
+end
+
+def git_status_porcelain
+  `git status --porcelain`.to_s
+end
+
+def abort_if_dirty!(message)
+  status = git_status_porcelain
+  return if status.strip.empty?
+
+  warn status
+  abort message
+end
+
+def abort_if_untracked_noise!
+  noise = git_status_porcelain.lines.select { |line| line.start_with?('??') }
+  return if noise.empty?
+
+  warn noise.join
+  abort 'Untracked files present after bump; add/ignore them before push.'
 end
 
 def bump_and_save!(type)
@@ -84,9 +111,20 @@ def bump_and_save!(type)
   raise "VERSION assignment not found in #{path}" if updated == contents
 
   File.write(path, updated)
+  sync_gemfile_lock_version!(new_v)
+
   Kdeploy.send(:remove_const, :VERSION) if Kdeploy.const_defined?(:VERSION, false)
   load path
   raise "VERSION reload mismatch: #{Kdeploy::VERSION} != #{new_v}" unless new_v == Kdeploy::VERSION
 
   new_v
+end
+
+def sync_gemfile_lock_version!(new_v)
+  lock = File.expand_path('Gemfile.lock', __dir__)
+  return unless File.exist?(lock)
+
+  text = File.read(lock)
+  patched = text.sub(/^    kdeploy \([\d.]+\)/, "    kdeploy (#{new_v})")
+  File.write(lock, patched) if patched != text
 end

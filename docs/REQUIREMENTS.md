@@ -417,6 +417,9 @@ docker compose --profile test up --build runner
 
 ### 2026-11-12
 
+- **做了什么**：修 `rake push` — 要求干净工作区；`rubocop -A`/lock 变更一并 commit；bump 同步 `Gemfile.lock`；避免 `git pull --rebase` 因脏树失败
+- **验证**：`bundle exec rubocop` clean；待 push 验证完整 release 路径
+
 - **做了什么**：优化 `Rakefile` — `sh` 失败即停；`push` 先 `rubocop:auto`+`spec`；只 commit `version.rb`；`run` 走 bundler `build`/`pkg`；bump 后 `remove_const` 刷新 VERSION
 - **验证**：`bump_and_save!(:patch)` 往返 OK；`bundle exec rake spec` 54✓；`rake -T` 无与 bundler `install:local` 冲突
 
